@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { InspectionData, InspectionArea, InspectionItem, InspectionPhoto, InspectionStatus, Client, Invoice, InvoiceStatus, InvoiceServiceItem, Property } from './types';
 import { INSPECTION_CATEGORIES, MOCK_CLIENTS } from './constants';
@@ -126,7 +127,12 @@ const formatDate = (dateString: string) => {
 };
 
 const formatCurrency = (amount: number, currency = 'OMR') => {
-    return `${amount.toFixed(2)} ${currency}`;
+    const formattedAmount = new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(amount);
+
+    return currency ? `${formattedAmount} ${currency}`: `$${formattedAmount}`;
 };
 
 
@@ -152,7 +158,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
             <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto`} onClick={e => e.stopPropagation()}>
                 <div className="flex justify-between items-center border-b dark:border-gray-600 pb-3 mb-4">
                     <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-2xl">&times;</button>
+                    <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-2xl">&times;</button>
                 </div>
                 {children}
             </div>
@@ -182,7 +188,7 @@ const PhotoUpload: React.FC<{ photos: InspectionPhoto[]; onUpload: (photo: Inspe
                 {photos.map((photo, index) => (
                     <div key={index} className="relative group">
                         <img src={`data:image/jpeg;base64,${photo.base64}`} alt={`upload-preview-${index}`} className="w-full h-20 object-cover rounded-md" />
-                        <button onClick={() => onRemove(index)} className="absolute top-0 right-0 bg-red-600 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
+                        <button type="button" onClick={() => onRemove(index)} className="absolute top-0 right-0 bg-red-600 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
                     </div>
                 ))}
                 <button
@@ -232,7 +238,7 @@ const InspectionItemRow: React.FC<{ item: InspectionItem; onUpdate: (updatedItem
                     <p className="font-semibold text-gray-800 dark:text-gray-100">{item.point}</p>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{item.category}</p>
                 </div>
-                <button onClick={onRemove} className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 text-xl font-bold">&times;</button>
+                <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 text-xl font-bold">&times;</button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -314,7 +320,7 @@ const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedAre
                     className="text-xl font-bold bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none text-gray-900 dark:text-gray-100"
                     placeholder="Area Name"
                 />
-                <button onClick={onRemove} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-semibold">Remove Area</button>
+                <button type="button" onClick={onRemove} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-semibold">Remove Area</button>
             </div>
             
             <div className="space-y-4">
@@ -333,6 +339,7 @@ const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedAre
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                 {points.map(point => (
                                     <button
+                                        type="button"
                                         key={point}
                                         onClick={() => { handleAddItem(category, point); setIsModalOpen(false); }}
                                         className="text-left p-2 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-md text-sm transition text-gray-800 dark:text-gray-300"
@@ -452,6 +459,170 @@ const InspectionForm: React.FC<{ inspectionId?: string; onSave: () => void; onCa
     );
 };
 
+const ReportTemplate: React.FC<{ inspection: InspectionData }> = ({ inspection }) => {
+    const WaslaLogo = () => (
+        <div className="flex items-center space-x-2">
+            <div className="flex flex-col">
+                <div className="w-4 h-4 bg-green-500"></div>
+                <div className="w-4 h-2 bg-blue-500 mt-0.5"></div>
+            </div>
+            <div className="text-2xl font-bold tracking-wider text-gray-700 dark:text-gray-300">
+                <span className="text-green-500">WASLA</span>
+                <p className="text-xs font-normal tracking-normal text-gray-500 dark:text-gray-400">Property Solutions</p>
+            </div>
+        </div>
+    );
+    
+    return (
+        <div className="print:block hidden">
+            {/* Page 1 */}
+            <div className="printable-a4 bg-white dark:bg-gray-800 p-8 text-sm break-after-page">
+                <header className="flex justify-center items-center flex-col mb-4">
+                    <WaslaLogo />
+                    <h1 className="text-xl font-bold mt-2 text-gray-800 dark:text-gray-100 uppercase tracking-widest">Property Inspection Report</h1>
+                </header>
+                
+                <div className="flex space-x-8">
+                    {/* English Column */}
+                    <div className="w-1/2 space-y-4">
+                        <section>
+                            <h2 className="font-bold border-b pb-1 mb-2 text-base">OVERVIEW</h2>
+                            <p className="font-bold">Dear Mr. {inspection.clientName},</p>
+                            <p>Thank you for choosing Wasla Real Estate Solutions as your home inspector. Your prospective home is basically in grade () as per our inspection and classifications. However, a number of rather typical inspection issues were identified.</p>
+                            <p>Please review the annexed report carefully before making your decision. If you need further explanation regarding this property conditions, please don't hesitate to call or email us from 9:00 am to 5:00 PM at:</p>
+                            <p>Email: wasla.solution@gmail.com</p>
+                            <p>Mobile: +968 90699799</p>
+                        </section>
+
+                        <section className="border-t pt-2">
+                            <h3 className="font-bold">No property is perfect.</h3>
+                            <p>Every building has imperfections or items that are ready for maintenance. It's the inspector's task to discover and report these so you can make informed decisions. This report should not be used as a tool to demean property, but rather as a way to illuminate the realities of the property.</p>
+                        </section>
+                        
+                        <section className="border-t pt-2">
+                             <h3 className="font-bold">This report is not an appraisal.</h3>
+                             <p>When an appraiser determines worth, only the most obvious conditions of a property are taken into account to establish a safe loan amount. In effect, the appraiser is representing the interests of the lender. Home inspectors focus more on the interests of the prospective buyer; and, although inspectors must be careful not to make any statements relating to property value, their findings can help buyers more completely understand the true costs of ownership.</p>
+                        </section>
+
+                        <section className="border-t pt-2">
+                            <h3 className="font-bold">Maintenance costs are normal.</h3>
+                            <p>Homeowners should plan to spend around 1% of the total value of a property in maintenance costs, annually. (Annual costs of rental property maintenance are often 2%, or more.) If considerably less than this percentage has been invested during several years preceding an inspection, the property will usually show the obvious signs of neglect; and the new property owners may be required to invest significant time and money to address accumulated maintenance needs.</p>
+                        </section>
+                        
+                        <section className="border-t pt-2">
+                             <h3 className="font-bold">SCOPE OF THE INSPECTION:</h3>
+                             <p>This report details the outcome of a visual survey of the property detailed in the annexed</p>
+                        </section>
+                    </div>
+
+                    {/* Arabic Column */}
+                    <div className="w-1/2 space-y-4 text-right" dir="rtl">
+                        <section>
+                            <h2 className="font-bold border-b pb-1 mb-2 text-base">نظرة عامة</h2>
+                            <p className="font-bold">الأفاضل/ المحترمون {inspection.clientName}،</p>
+                            <p>نشكر لكم اختياركم "وصلة للحلول العقارية" للقيام بفحص العقار الخاص بكم. وفقًا للفحص والتصنيف المعتمد لدينا، فإن العقار الذي ترغبون في شرائه يقع ضمن الدرجة ()، مع وجود بعض الملاحظات التي تُعد شائعة في عمليات الفحص العقاري.</p>
+                            <p>يرجى مراجعة التقرير المرفق بعناية قبل اتخاذ قراركم النهائ، و إذا كنتم بحاجة إلى توضيحات إضافية حول حالة العقار، فلا تترددوا بالتواصل معنا عبر الهاتف أو البريد الإلكتروني من الساعة 9 صباحًا حتى 5 مساءً على وسائل التواصل التالية:</p>
+                            <p>البريد الإلكتروني: wasla.solution@gmail.com</p>
+                            <p>لهاتف: +96890699799</p>
+                        </section>
+                        
+                         <section className="border-t pt-2">
+                            <h3 className="font-bold">لا يوجد عقار مثالي</h3>
+                            <p>كل عقار يحتوي على بعض العيوب أو الأجزاء التي تحتاج إلى صيانة. دور المفتش هو تحديد هذه النقاط وتقديمها بوضوح لمساعدتكم في اتخاذ قرارات مستنيرة. هذا التقرير لا يُقصد به التقليل من قيمة العقار، وإنما يهدف إلى توضيح الحالة الواقعية له.</p>
+                        </section>
+
+                        <section className="border-t pt-2">
+                             <h3 className="font-bold">هذا التقرير ليس تقييما سعريًا</h3>
+                             <p>عند قيام المثمن بتحديد قيمة العقار، فإنه يأخذ بعين الاعتبار فقط العيوب الظاهرة لتقدير مبلغ قرض آمن. بمعنى آخر، فإن المثمن يُمثل مصلحة الجهة المقرضة. أما فاحص العقار، فيركز على مصلحة المشتري المحتمل. ورغم أن المفتش لا يحدد قيمة العقار، إلا أن نتائج الفحص تساعد المشتري في فهم التكاليف الحقيقية لامتلاك العقار.</p>
+                        </section>
+
+                         <section className="border-t pt-2">
+                            <h3 className="font-bold">تكاليف الصيانة أمر طبيعي</h3>
+                            <p>ينبغي على مالكي العقارات تخصيص ما يُعادل 1% من قيمة العقار سنويًا لأعمال الصيانة الدورية. أما العقارات المؤجرة فقد تصل النسبة إلى 2% أو أكثر. وإذا لم يتم استثمار هذه النسبة على مدى عدة سنوات، فستظهر مؤشرات واضحة على الإهمال، مما يُحتم على المالك الجديد دفع تكاليف كبيرة لاحقًا لمعالجة هذه الإهمالات.</p>
+                        </section>
+
+                         <section className="border-t pt-2">
+                             <h3 className="font-bold">نطاق الفحص</h3>
+                             <p>يوضح هذا التقرير نتيجة الفحص البصري للعقار كما هو مفصل في قائمة الفحص المرفقة، بهدف تقييم جودة التنفيذ مقارنة بالمعايير المعتمدة.</p>
+                        </section>
+                    </div>
+                </div>
+            </div>
+
+            {/* Page 2 */}
+            <div className="printable-a4 bg-white dark:bg-gray-800 p-8 text-sm break-after-page">
+                 <header className="flex justify-center items-center flex-col mb-4">
+                    <WaslaLogo />
+                </header>
+                
+                 <div className="flex space-x-8">
+                    <div className="w-1/2 space-y-4">
+                        <p>inspection checklist in order to check the quality of workmanship against applicable standards. It covers both the interior and the exterior of the property as well as garden, driveway and garage if relevant. Areas not inspected, for whatever reason, cannot guarantee that these areas are free from defects.</p>
+                        <p>This report was formed as per the client request as a supportive opinion to enable him to have better understanding about property conditions. Our opinion does not study the property value or the engineering of the structure rather it studies the functionality of the property. This report will be listing the property defects supported by images and videos, by showing full study of the standards of property status and functionality including other relevant elements of the property as stated in the checklist.</p>
+                        <section>
+                            <h2 className="font-bold border-b pb-1 mb-2 text-base">CONFIDENTIALITY OF THE REPORT:</h2>
+                            <p>The inspection report is to be prepared for the Client for the purpose of informing of the major deficiencies in the condition of the subject property and is solely and exclusively for Client's own information and may not be relied upon by any other person. Client may distribute copies of the inspection report to the seller and the real estate agents directly involved in this transaction, but Client and Inspector do not in any way intend to benefit said seller or the real estate agents directly or indirectly through this Agreement or the inspection report. In the event that the inspection report has been prepared for the SELLER of the subject property, an authorized representative of Wasla Real Estate Solutions will return to the property, for a fee, to meet with the BUYER for a consultation to provide a better understanding of the reported conditions and answer.</p>
+                        </section>
+                    </div>
+                    <div className="w-1/2 space-y-4 text-right" dir="rtl">
+                         <p>يشمل الفحص المناطق الداخلية والخارجية، بالإضافة إلى الحديقة، والممر، والجراج (إن وجد). كما لا يمكن ضمان خلو المناطق غير المفحوصة من العيوب لأي سبب كان.</p>
+                         <p>وقد تم إعداد هذا التقرير بناءً على طلب العميل لتقديم رأي داعم يساعده على فهم حالة العقار بشكل أفضل. رأينا الفني لا يشمل تقييم القيمة السوقية أو التحليل الإنشائي، بل يركز على حالة العقار ووظائفه العامة. كما سيتم سرد العيوب المرصودة بناءً على دراسة كاملة لمعايير الحالة والأداء الوظيفي للعقار مشمولة بالصور والفيديوهات، إلى جانب العناصر الأخرى ذات الصلة كما هو موضح في قائمة الفحص.</p>
+                        <section>
+                            <h2 className="font-bold border-b pb-1 mb-2 text-base">سرية التقرية</h2>
+                            <p>تم إعداد تقرير الفحص هذا خصيصًا للعميل بغرض إعلامه بالنواقص الجوهرية في حالة العقار محل الفحص، وهو للاستخدام الشخصي فقط ولا يجوز الاعتماد عليه من قبل أي طرف آخر. يجوز للعميل مشاركة نسخة من التقرير مع البائع أو وكلاء العقارات المعنيين بهذه الصفقة، إلا أن كل من العميل والفاحص لا يقصدان من خلال هذا التقرير تحقيق أي منفعة مباشرة أو غير مباشرة لهؤلاء الأطراف. وفي حال تم إعداد هذا التقرير بطلب من البائع، فإن ممثلا معتمدًا من شركة وصلة لحلول العقار سيعود إلى العقار - مقابل رسوم - لعقد جلسة استشارية مع المشتري بهدف توضيح الملاحظات الواردة في التقرير والإجابة عن استفساراته.</p>
+                        </section>
+                    </div>
+                </div>
+
+                <div className="mt-8 pt-4 border-t flex justify-between">
+                    <div className="w-1/2 space-y-2">
+                        <p><strong>Client Name:</strong> {inspection.clientName}</p>
+                        <p><strong>Signature:</strong> ________________________</p>
+                        <p><strong>Prepared by:</strong> {inspection.inspectorName}</p>
+                        <p><strong>Stamp:</strong></p>
+                        <p><strong>Date:</strong> {formatDate(inspection.inspectionDate)}</p>
+                        <p className="mt-4">Property Inspection report is annexed</p>
+                    </div>
+                     <div className="w-1/2 space-y-2 text-right" dir="rtl">
+                        <p><strong>اسم العميل:</strong> {inspection.clientName}</p>
+                        <p><strong>التوقيع:</strong> ________________________</p>
+                        <p><strong>أعد التقرير بواسطة:</strong> {inspection.inspectorName}</p>
+                        <p><strong>الختم:</strong></p>
+                        <p><strong>التاريخ:</strong> {formatDate(inspection.inspectionDate)}</p>
+                        <p className="mt-4">مرفق تقرير الفحص</p>
+                    </div>
+                </div>
+                
+                <table className="w-full mt-8 border-collapse border text-center">
+                    <thead>
+                        <tr className="bg-gray-100 dark:bg-gray-700">
+                            <th className="border p-2">Grade</th>
+                            <th className="border p-2">AAA</th>
+                            <th className="border p-2">AA</th>
+                            <th className="border p-2">A</th>
+                            <th className="border p-2">B</th>
+                            <th className="border p-2">C</th>
+                            <th className="border p-2">D</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td className="border p-2 font-bold">Description</td>
+                            <td className="border p-2">Excellent</td>
+                            <td className="border p-2">Very Good</td>
+                            <td className="border p-2">Good</td>
+                            <td className="border p-2">Meeting the standards</td>
+                            <td className="border p-2">Acceptable</td>
+                            <td className="border p-2">Require maintenance</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+
 const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onEdit: (id: string) => void }> = ({ inspectionId, onBack, onEdit }) => {
     const { getInspectionById, saveInspection } = useInspections();
     const [inspection, setInspection] = useState<InspectionData | null>(null);
@@ -474,37 +645,45 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
     };
 
     const handleExportPDF = async () => {
-        const reportElement = document.getElementById('report-content');
+        const reportElement = document.getElementById('full-report-container');
         if (!reportElement || !inspection) return;
 
         setIsExporting(true);
+        // Temporarily make the template visible for html2canvas
+        const templateContainer = reportElement.querySelector('.print\\:block') as HTMLElement;
+        if(templateContainer) templateContainer.classList.remove('hidden');
+
         try {
             const canvas = await html2canvas(reportElement, {
                 scale: 2,
                 useCORS: true,
                 backgroundColor: document.documentElement.classList.contains('dark') ? '#1f2937' : '#ffffff',
+                windowHeight: reportElement.scrollHeight,
+                scrollY: -window.scrollY
             });
 
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
             
             const pdfWidth = pdf.internal.pageSize.getWidth();
-            const imgWidth = canvas.width;
-            const imgHeight = canvas.height;
-            const ratio = imgWidth / pdfWidth;
-            const pdfHeight = imgHeight / ratio;
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const ratio = canvasWidth / pdfWidth;
+            const totalPDFHeight = canvasHeight / ratio;
 
             let position = 0;
-            let heightLeft = pdfHeight;
+            let heightLeft = totalPDFHeight;
             
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-            heightLeft -= pdf.internal.pageSize.getHeight();
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, totalPDFHeight);
+            heightLeft -= pdfHeight;
 
             while (heightLeft > 0) {
-                position -= pdf.internal.pageSize.getHeight();
+                position -= pdfHeight;
                 pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-                heightLeft -= pdf.internal.pageSize.getHeight();
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, totalPDFHeight);
+                heightLeft -= pdfHeight;
             }
             
             pdf.save(`inspection-report-${inspection.id}.pdf`);
@@ -513,6 +692,7 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
             alert("Sorry, there was an error exporting the report to PDF.");
         } finally {
             setIsExporting(false);
+            if(templateContainer) templateContainer.classList.add('hidden');
         }
     };
 
@@ -538,73 +718,87 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                 </div>
             </div>
 
-            <div id="report-content" className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg border dark:border-gray-700 printable-a4">
-                 <header className="border-b-2 border-blue-500 pb-4 mb-8">
-                    <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Property Inspection Report</h1>
-                    <p className="text-lg text-gray-600 dark:text-gray-300">{inspection.propertyLocation}</p>
-                </header>
-                
-                <div className="grid grid-cols-2 gap-x-8 gap-y-4 mb-8 text-sm">
-                    <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Client:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.clientName}</span></div>
-                    <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Inspector:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.inspectorName}</span></div>
-                    <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Date:</strong> <span className="text-gray-800 dark:text-gray-200">{formatDate(inspection.inspectionDate)}</span></div>
-                     <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Property Type:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.propertyType}</span></div>
-                </div>
+            <div id="full-report-container">
+                <ReportTemplate inspection={inspection} />
+                <div id="report-content" className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg border dark:border-gray-700 printable-a4">
+                     <header className="border-b-2 border-blue-500 pb-4 mb-8">
+                        <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Property Inspection Report</h1>
+                        <p className="text-lg text-gray-600 dark:text-gray-300">{inspection.propertyLocation}</p>
+                    </header>
+                    
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 mb-8 text-sm">
+                        <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Client:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.clientName}</span></div>
+                        <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Inspector:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.inspectorName}</span></div>
+                        <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Date:</strong> <span className="text-gray-800 dark:text-gray-200">{formatDate(inspection.inspectionDate)}</span></div>
+                         <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Property Type:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.propertyType}</span></div>
+                    </div>
 
-                <div className="mb-8">
-                    <div className="flex justify-between items-center mb-2">
-                        <h2 className="text-2xl font-bold text-blue-700 dark:text-blue-400 border-b-2 border-blue-200 dark:border-blue-800 pb-2">Executive Summary</h2>
-                        {!inspection.aiSummary && (
-                             <button onClick={handleGenerateSummary} disabled={isSummaryLoading} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center gap-2 disabled:bg-blue-300 print:hidden">
-                                {isSummaryLoading ? <><Spinner /> Generating...</> : 'Generate AI Summary'}
-                            </button>
+                    <div className="mb-8">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="text-2xl font-bold text-blue-700 dark:text-blue-400 border-b-2 border-blue-200 dark:border-blue-800 pb-2">Executive Summary</h2>
+                            {!inspection.aiSummary && (
+                                 <button onClick={handleGenerateSummary} disabled={isSummaryLoading} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center gap-2 disabled:bg-blue-300 print:hidden">
+                                    {isSummaryLoading ? <><Spinner /> Generating...</> : 'Generate AI Summary'}
+                                </button>
+                            )}
+                        </div>
+                        {inspection.aiSummary ? (
+                            <div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{inspection.aiSummary}</div>
+                        ) : (
+                            <p className="text-gray-500 dark:text-gray-400 italic">Generate an AI summary for a quick overview of the key findings.</p>
                         )}
                     </div>
-                    {inspection.aiSummary ? (
-                        <div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{inspection.aiSummary}</div>
-                    ) : (
-                        <p className="text-gray-500 dark:text-gray-400 italic">Generate an AI summary for a quick overview of the key findings.</p>
-                    )}
-                </div>
 
-                {inspection.areas.map(area => (
-                    <div key={area.id} className="mb-8 break-inside-avoid">
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 p-3 rounded-t-md border-b-2 border-blue-500">{area.name}</h3>
-                        <div className="border border-t-0 dark:border-gray-600 rounded-b-md">
-                           {area.items.length > 0 ? area.items.map(item => (
-                               <div key={item.id} className="p-4 border-b last:border-b-0 dark:border-gray-600 break-inside-avoid-page">
-                                    <div className="flex justify-between items-start">
-                                        <p className="font-semibold text-gray-900 dark:text-gray-200">{item.point}</p>
-                                        <span className={`font-bold text-lg ${statusColors[item.status]}`}>{item.status}</span>
-                                    </div>
-                                    {item.location && <p className="text-sm text-gray-500 dark:text-gray-400"><strong>Location:</strong> {item.location}</p>}
-                                    {item.comments && <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 whitespace-pre-wrap"><strong>Comments:</strong> {item.comments}</p>}
-                                   {item.photos.length > 0 && (
-                                       <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                                           {item.photos.map((photo, index) => (
-                                               <img key={index} src={`data:image/jpeg;base64,${photo.base64}`} alt={`${item.point} photo ${index+1}`} className="rounded-md shadow-sm w-full object-cover"/>
-                                           ))}
-                                       </div>
-                                   )}
-                               </div>
-                           )) : <p className="p-4 text-gray-500 dark:text-gray-400">No items inspected in this area.</p>}
+                    {inspection.areas.map(area => (
+                        <div key={area.id} className="mb-8 break-inside-avoid">
+                            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 p-3 rounded-t-md border-b-2 border-blue-500">{area.name}</h3>
+                            <div className="border border-t-0 dark:border-gray-600 rounded-b-md">
+                               {area.items.length > 0 ? area.items.map(item => (
+                                   <div key={item.id} className="p-4 border-b last:border-b-0 dark:border-gray-600 break-inside-avoid-page">
+                                        <div className="flex justify-between items-start">
+                                            <p className="font-semibold text-gray-900 dark:text-gray-200">{item.point}</p>
+                                            <span className={`font-bold text-lg ${statusColors[item.status]}`}>{item.status}</span>
+                                        </div>
+                                        {item.location && <p className="text-sm text-gray-500 dark:text-gray-400"><strong>Location:</strong> {item.location}</p>}
+                                        {item.comments && <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 whitespace-pre-wrap"><strong>Comments:</strong> {item.comments}</p>}
+                                       {item.photos.length > 0 && (
+                                           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                                               {item.photos.map((photo, index) => (
+                                                   <img key={index} src={`data:image/jpeg;base64,${photo.base64}`} alt={`${item.point} photo ${index+1}`} className="rounded-md shadow-sm w-full object-cover"/>
+                                               ))}
+                                           </div>
+                                       )}
+                                   </div>
+                               )) : <p className="p-4 text-gray-500 dark:text-gray-400">No items inspected in this area.</p>}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    ))}
+                </div>
             </div>
              <style>{`
+                .break-after-page {
+                    break-after: page;
+                    page-break-after: always;
+                }
                 @media print {
                     body { -webkit-print-color-adjust: exact; color-adjust: exact; }
                     .print\\:hidden { display: none !important; }
+                    .print\\:block { display: block !important; }
                     html, body {
                         background-color: #fff !important;
                         color: #000 !important;
                     }
-                    #report-content, #invoice-content {
+                    #report-content, #invoice-content, .printable-a4 {
                         box-shadow: none !important;
                         border: none !important;
                         color: #000 !important;
                         background-color: #fff !important;
+                        margin: 0;
+                        padding: 10mm;
+                    }
+                     #full-report-container {
+                        margin: 0 !important;
+                        padding: 0 !important;
                     }
                     .dark * {
                         color: #000 !important;
@@ -713,38 +907,116 @@ const StatCard: React.FC<{ title: string; value: string; change: string; changeT
         <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
             <h4 className="text-sm font-medium text-gray-500 dark:text-slate-400">{title}</h4>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
-            <div className={`text-sm flex items-center mt-2 ${isIncrease ? 'text-green-500' : 'text-red-500'}`}>
-                {isIncrease ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
-                ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                )}
-                {change}
-            </div>
+            {change && (
+                 <div className={`text-sm flex items-center mt-2 ${isIncrease ? 'text-green-500' : 'text-red-500'}`}>
+                    {isIncrease ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
+                    ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                    )}
+                    {change}
+                </div>
+            )}
         </div>
     );
 };
 
 const Dashboard: React.FC = () => {
+    const { getInspections } = useInspections();
+    const { getInvoices } = useInvoices();
+    const { getClients } = useClients();
+
+    const [inspections, setInspections] = useState<InspectionData[]>([]);
+    const [invoices, setInvoices] = useState<Invoice[]>([]);
+    const [clients, setClients] = useState<Client[]>([]);
+
+    useEffect(() => {
+        setInspections(getInspections());
+        setInvoices(getInvoices());
+        setClients(getClients());
+    }, []);
+
+    const dashboardData = React.useMemo(() => {
+        const now = new Date();
+        const oneMonthAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+
+        // --- Stat Cards Data ---
+        const totalInspections = inspections.length;
+        const inspectionsThisMonth = inspections.filter(i => new Date(i.inspectionDate) >= oneMonthAgo).length;
+
+        const paidInvoices = invoices.filter(i => i.status === 'Paid');
+        const totalRevenue = paidInvoices.reduce((sum, i) => sum + i.totalAmount, 0);
+        const revenueThisMonth = paidInvoices
+            .filter(i => new Date(i.invoiceDate) >= oneMonthAgo)
+            .reduce((sum, i) => sum + i.totalAmount, 0);
+
+        const totalClients = clients.length;
+        const overdueInvoicesCount = invoices.filter(i => i.status === 'Unpaid' && new Date(i.dueDate) < now).length;
+
+        // --- Pie Chart Data ---
+        const invoiceStatusCounts = invoices.reduce((acc, inv) => {
+            acc[inv.status] = (acc[inv.status] || 0) + 1;
+            return acc;
+        }, {} as Record<InvoiceStatus, number>);
+        
+        const pieChartLabels = Object.keys(invoiceStatusCounts);
+        const pieChartDataPoints = pieChartLabels.map(label => invoiceStatusCounts[label as InvoiceStatus]);
+
+
+        // --- Bar Chart Data ---
+        const monthlyRevenue: { [key: string]: { name: string; total: number } } = {};
+        for(let i = 5; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const monthName = d.toLocaleString('default', { month: 'short' });
+            const year = d.getFullYear();
+            monthlyRevenue[`${year}-${monthName}`] = { name: `${monthName} '${String(year).slice(-2)}`, total: 0 };
+        }
+
+        paidInvoices.forEach(inv => {
+            const invDate = new Date(inv.invoiceDate);
+            const monthName = invDate.toLocaleString('default', { month: 'short' });
+            const year = invDate.getFullYear();
+            const key = `${year}-${monthName}`;
+            if (monthlyRevenue[key]) {
+                monthlyRevenue[key].total += inv.totalAmount;
+            }
+        });
+        const barChartLabels = Object.values(monthlyRevenue).map(m => m.name);
+        const barChartDataPoints = Object.values(monthlyRevenue).map(m => m.total);
+
+        return {
+            totalInspections,
+            inspectionsThisMonth,
+            totalRevenue,
+            revenueThisMonth,
+            totalClients,
+            overdueInvoicesCount,
+            pieChartLabels,
+            pieChartDataPoints,
+            barChartLabels,
+            barChartDataPoints,
+        };
+    }, [inspections, invoices, clients]);
+
     const isDarkMode = document.documentElement.classList.contains('dark');
     const textColor = isDarkMode ? '#e5e7eb' : '#374151';
     const gridColor = isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
 
     const barChartData = {
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
+        labels: dashboardData.barChartLabels,
         datasets: [{
             label: 'Revenue',
-            data: [4000, 3000, 5000, 4500, 6000, 5500, 7000],
+            data: dashboardData.barChartDataPoints,
             backgroundColor: '#3b82f6', // blue-500
             borderRadius: 4,
         }],
     };
-
+    
     const pieChartData = {
-        labels: ['Completed', 'In Progress', 'Overdue'],
+        labels: dashboardData.pieChartLabels,
         datasets: [{
-            data: [150, 50, 25],
-            backgroundColor: ['#10b981', '#f59e0b', '#3b82f6'], // emerald-500, amber-500, blue-500
+            data: dashboardData.pieChartDataPoints,
+            backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#6b7280'], // emerald-500, red-500, amber-500, gray-500
             borderColor: isDarkMode ? '#1e293b' : '#ffffff', // slate-800 for dark
             borderWidth: 4,
         }],
@@ -784,10 +1056,10 @@ const Dashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Total Inspections" value="1,250" change="+12.5%" changeType="increase" />
-                <StatCard title="Total Revenue" value="$85,400" change="+8.2%" changeType="increase" />
-                <StatCard title="Active Clients" value="312" change="+3" changeType="increase" />
-                <StatCard title="Overdue Tasks" value="14" change="-2" changeType="decrease" />
+                <StatCard title="Total Inspections" value={dashboardData.totalInspections.toString()} change={`+${dashboardData.inspectionsThisMonth} this month`} changeType="increase" />
+                <StatCard title="Total Revenue" value={formatCurrency(dashboardData.totalRevenue, '')} change={`+${formatCurrency(dashboardData.revenueThisMonth, '')} this month`} changeType="increase" />
+                <StatCard title="Active Clients" value={dashboardData.totalClients.toString()} change="" changeType="increase" />
+                <StatCard title="Overdue Invoices" value={dashboardData.overdueInvoicesCount.toString()} change="" changeType="decrease" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -798,7 +1070,7 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
                 <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Inspection Status</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Invoice Status</h3>
                      <div className="h-72">
                         <Pie data={pieChartData} options={pieOptions} />
                     </div>
