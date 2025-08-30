@@ -132,7 +132,13 @@ const formatCurrency = (amount: number, currency = 'OMR') => {
         maximumFractionDigits: 2,
     }).format(amount);
 
-    return currency ? `${formattedAmount} ${currency}`: `$${formattedAmount}`;
+    // The previous implementation had inconsistent formatting.
+    // This ensures that the currency symbol/code is always prepended,
+    // matching the convention seen in the screenshot (e.g., "$0.00").
+    // It also handles the case where an empty string is passed from dashboard cards.
+    const displayCurrency = currency || 'OMR';
+    
+    return `${displayCurrency} ${formattedAmount}`;
 };
 
 
@@ -645,44 +651,59 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
     };
 
     const handleExportPDF = async () => {
-        const reportElement = document.getElementById('full-report-container');
-        if (!reportElement || !inspection) return;
+        const reportContainer = document.getElementById('full-report-container');
+        const contentElement = document.getElementById('report-content');
+        if (!reportContainer || !contentElement || !inspection) return;
 
         setIsExporting(true);
         // Temporarily make the template visible for html2canvas
-        const templateContainer = reportElement.querySelector('.print\\:block') as HTMLElement;
+        const templateContainer = reportContainer.querySelector('.print\\:block') as HTMLElement;
         if(templateContainer) templateContainer.classList.remove('hidden');
 
         try {
-            const canvas = await html2canvas(reportElement, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: document.documentElement.classList.contains('dark') ? '#1f2937' : '#ffffff',
-                windowHeight: reportElement.scrollHeight,
-                scrollY: -window.scrollY
-            });
-
-            const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
-            
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
-            
-            const canvasWidth = canvas.width;
-            const canvasHeight = canvas.height;
-            const ratio = canvasWidth / pdfWidth;
-            const totalPDFHeight = canvasHeight / ratio;
+
+            const commonCanvasOptions = {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff', // Force white background
+            };
+
+            // --- Pages from ReportTemplate ---
+            const templatePages = templateContainer.querySelectorAll('.printable-a4');
+            for (let i = 0; i < templatePages.length; i++) {
+                const page = templatePages[i] as HTMLElement;
+                const canvas = await html2canvas(page, commonCanvasOptions);
+                const imgData = canvas.toDataURL('image/png');
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            }
+
+            // --- Main Content Page(s) ---
+            // This element's height is dynamic.
+            const contentCanvas = await html2canvas(contentElement, {
+                ...commonCanvasOptions,
+                windowHeight: contentElement.scrollHeight,
+                scrollY: 0,
+            });
+            const contentImgData = contentCanvas.toDataURL('image/png');
+            const contentImgProps = pdf.getImageProperties(contentImgData);
+            const contentPdfWidth = pdf.internal.pageSize.getWidth();
+            const totalContentPDFHeight = (contentImgProps.height * contentPdfWidth) / contentImgProps.width;
 
             let position = 0;
-            let heightLeft = totalPDFHeight;
+            let heightLeft = totalContentPDFHeight;
             
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, totalPDFHeight);
+            pdf.addPage();
+            pdf.addImage(contentImgData, 'PNG', 0, position, contentPdfWidth, totalContentPDFHeight);
             heightLeft -= pdfHeight;
 
             while (heightLeft > 0) {
                 position -= pdfHeight;
                 pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, totalPDFHeight);
+                pdf.addImage(contentImgData, 'PNG', 0, position, contentPdfWidth, totalContentPDFHeight);
                 heightLeft -= pdfHeight;
             }
             
@@ -781,12 +802,18 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                     page-break-after: always;
                 }
                 @media print {
+                    @page {
+                        size: A4;
+                        margin: 0;
+                    }
                     body { -webkit-print-color-adjust: exact; color-adjust: exact; }
                     .print\\:hidden { display: none !important; }
                     .print\\:block { display: block !important; }
                     html, body {
                         background-color: #fff !important;
                         color: #000 !important;
+                        width: 210mm;
+                        height: 297mm;
                     }
                     #report-content, #invoice-content, .printable-a4 {
                         box-shadow: none !important;
@@ -794,7 +821,13 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                         color: #000 !important;
                         background-color: #fff !important;
                         margin: 0;
-                        padding: 10mm;
+                        padding: 20mm;
+                        width: 210mm;
+                        height: 297mm;
+                        box-sizing: border-box;
+                    }
+                    #report-content {
+                        height: auto;
                     }
                      #full-report-container {
                         margin: 0 !important;
@@ -805,14 +838,28 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                         background-color: transparent !important;
                         border-color: #ccc !important;
                     }
+                    h1, h2, h3 {
+                        color: #111827 !important;
+                    }
+                    .bg-gray-100 {
+                        background-color: #f3f4f6 !important;
+                    }
+                    .border-blue-500 {
+                        border-color: #3b82f6 !important;
+                    }
                     .break-inside-avoid { page-break-inside: avoid; }
                     .break-inside-avoid-page { page-break-inside: avoid; }
                 }
                 .printable-a4 {
                     width: 210mm;
                     min-height: 297mm;
-                    padding: 15mm;
-                    margin: 0 auto;
+                    padding: 20mm; /* Updated for ~1-inch margins */
+                    margin: 1rem auto;
+                    box-sizing: border-box; /* To include padding in width */
+                }
+                #report-content.printable-a4 {
+                    /* This allows html2canvas to capture the full scroll height */
+                    min-height: auto;
                 }
             `}</style>
         </div>
@@ -1922,7 +1969,7 @@ const App: React.FC = () => {
                     <NavLink page="clients" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}>Clients</NavLink>
                     <NavLink page="invoices" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}>Invoices</NavLink>
                     <NavLink page="reports" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>}>Reports</NavLink>
-                    <NavLink page="settings" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}>Settings</NavLink>
+                    <NavLink page="settings" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}>Settings</NavLink>
                 </nav>
                 <div className="mt-auto p-4 border-t border-slate-700">
                     <p className="text-xs text-center text-gray-400">&copy; 2024 Inspector Pro. All Rights Reserved.</p>
