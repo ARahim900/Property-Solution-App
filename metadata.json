@@ -1,0 +1,5 @@
+{
+  "name": "AI Property Inspection Pro",
+  "description": "An advanced property inspection tool that allows users to create detailed inspection reports. It features AI-powered summaries of findings and image-based defect analysis to streamline the inspection process.",
+  "requestFramePermissions": []
+}
