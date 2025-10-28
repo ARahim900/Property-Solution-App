@@ -1,4 +1,4 @@
-import { Client } from './types';
+import { Client, PredefinedService } from './types';
 
 export const INSPECTION_CATEGORIES: { [key: string]: string[] } = {
     "Structural & Interior": [
@@ -40,6 +40,14 @@ export const INSPECTION_CATEGORIES: { [key: string]: string[] } = {
         "Glass Shower Partition Sealing"
     ]
 };
+
+export const PREDEFINED_SERVICES: PredefinedService[] = [
+  { name: 'Standard Inspection', description: 'Standard Residential Property Inspection', unitPrice: 150 },
+  { name: 'Re-inspection', description: 'Follow-up inspection for previously identified issues', unitPrice: 75 },
+  { name: 'Plumbing Check', description: 'Detailed visual inspection of the plumbing system', unitPrice: 100 },
+  { name: 'Electrical Audit', description: 'Detailed visual inspection of the electrical system', unitPrice: 100 },
+  { name: 'Commercial Inspection (per sqm)', description: 'Commercial Property Inspection', unitPrice: 2 },
+];
 
 export const MOCK_CLIENTS: Client[] = [
     {

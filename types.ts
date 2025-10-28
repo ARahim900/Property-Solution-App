@@ -78,3 +78,26 @@ export interface Invoice {
   notes?: string;
   template?: 'classic' | 'modern' | 'compact';
 }
+
+// New type for Application Settings
+export interface AppSettings {
+  theme: 'light' | 'dark';
+  notifications: {
+    email: boolean;
+    push: boolean;
+  };
+  language: 'en' | 'ar';
+  profile: {
+    name: string;
+    email: string;
+    phone: string;
+    avatar: string; // base64 string or URL
+  };
+}
+
+// New type for Predefined Services
+export interface PredefinedService {
+  name: string;
+  description: string;
+  unitPrice: number;
+}

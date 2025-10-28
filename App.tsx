@@ -1,10 +1,10 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { InspectionData, InspectionArea, InspectionItem, InspectionPhoto, InspectionStatus, Client, Invoice, InvoiceStatus, InvoiceServiceItem, Property } from './types';
-import { INSPECTION_CATEGORIES, MOCK_CLIENTS } from './constants';
-import { generateReportSummary, analyzeDefectImage } from './services/geminiService';
+import { InspectionData, InspectionArea, InspectionItem, InspectionPhoto, InspectionStatus, Client, Invoice, InvoiceStatus, InvoiceServiceItem, Property, AppSettings, PredefinedService } from './types';
+import { INSPECTION_CATEGORIES, MOCK_CLIENTS, PREDEFINED_SERVICES } from './constants';
+import { WaslaReportGenerator } from './services/pdfGenerator';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 import { Bar, Pie } from 'react-chartjs-2';
 
@@ -29,9 +29,18 @@ const useInspections = () => {
     };
 
     const saveInspection = (inspectionData: InspectionData): void => {
-        const inspections = getInspections().filter(insp => insp.id !== inspectionData.id);
-        inspections.push(inspectionData);
-        localStorage.setItem('inspections', JSON.stringify(inspections));
+        try {
+            const inspections = getInspections().filter(insp => insp.id !== inspectionData.id);
+            inspections.push(inspectionData);
+            localStorage.setItem('inspections', JSON.stringify(inspections));
+        } catch (error) {
+            console.error("Failed to save inspection:", error);
+            if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+                alert("Could not save inspection. The browser storage is full. Please try removing old inspections or photos.");
+            } else {
+                alert("An unexpected error occurred while saving. Please check the console for details.");
+            }
+        }
     };
     
     const deleteInspection = (id: string): void => {
@@ -101,14 +110,92 @@ const useInvoices = () => {
     return { getInvoices, getInvoiceById, saveInvoice, deleteInvoice };
 };
 
+const useAppSettings = () => {
+    const defaultAvatar = `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#cbd5e1"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>')}`;
+
+    const defaultSettings: AppSettings = {
+        theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'dark',
+        notifications: { email: true, push: false },
+        language: 'en',
+        profile: {
+            name: 'Alex Johnson',
+            email: 'alex.j@inspectorpro.dev',
+            phone: '+1-555-123-4567',
+            avatar: defaultAvatar,
+        },
+    };
+    
+    const getSettings = (): AppSettings => {
+        try {
+            const stored = localStorage.getItem('appSettings');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                // Deep merge with defaults to handle new settings being added
+                return {
+                    ...defaultSettings,
+                    ...parsed,
+                    notifications: { ...defaultSettings.notifications, ...parsed.notifications },
+                    profile: { ...defaultSettings.profile, ...parsed.profile },
+                };
+            }
+            localStorage.setItem('appSettings', JSON.stringify(defaultSettings));
+            return defaultSettings;
+        } catch (e) {
+            console.error("Failed to parse app settings:", e);
+            return defaultSettings;
+        }
+    };
+
+    const saveSettings = (settings: AppSettings) => {
+        localStorage.setItem('appSettings', JSON.stringify(settings));
+        localStorage.setItem('theme', settings.theme); // Also save theme separately for initial load
+    };
+    
+    return { getSettings, saveSettings };
+};
+
 
 // --- Helper Functions ---
-const fileToBase64 = (file: File): Promise<string> => {
+const resizeAndCompressImage = (file: File, maxSize = 1024, quality = 0.8): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = error => reject(error);
+    reader.onload = (event) => {
+      if (!event.target?.result) {
+        return reject(new Error("FileReader did not return a result."));
+      }
+      const img = new Image();
+      img.src = event.target.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+
+        if (width > height) {
+          if (width > maxSize) {
+            height = Math.round(height * (maxSize / width));
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = Math.round(width * (maxSize / height));
+            height = maxSize;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return reject(new Error('Failed to get canvas context'));
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (error) => reject(error);
+    };
+    reader.onerror = (error) => reject(error);
   });
 };
 
@@ -119,7 +206,7 @@ const formatDate = (dateString: string) => {
     const timeZoneOffset = date.getTimezoneOffset() * 60000;
     const adjustedDate = new Date(date.getTime() + timeZoneOffset);
 
-    return adjustedDate.toLocaleDateString('en-US', {
+    return adjustedDate.toLocaleDateString('en-GB', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -131,18 +218,20 @@ const formatCurrency = (amount: number, currency = 'OMR') => {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
     }).format(amount);
-
-    // The previous implementation had inconsistent formatting.
-    // This ensures that the currency symbol/code is always prepended,
-    // matching the convention seen in the screenshot (e.g., "$0.00").
-    // It also handles the case where an empty string is passed from dashboard cards.
-    const displayCurrency = currency || 'OMR';
     
-    return `${displayCurrency} ${formattedAmount}`;
+    return currency ? `${currency} ${formattedAmount}` : formattedAmount;
 };
 
 
 // --- UI Components ---
+const buttonClasses = {
+    primary: "bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50 disabled:bg-blue-400",
+    secondary: "bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900",
+    destructive: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900",
+};
+
+const inputClasses = "block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition";
+
 const Spinner: React.FC<{ className?: string }> = ({ className = 'text-white' }) => (
     <svg className={`animate-spin h-5 w-5 ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -160,15 +249,48 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
         '2xl': 'max-w-2xl',
     };
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-opacity-80 z-50 flex justify-center items-center" onClick={onClose}>
-            <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto`} onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center border-b dark:border-gray-600 pb-3 mb-4">
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
-                    <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 text-2xl">&times;</button>
+        <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-opacity-80 z-50 flex justify-center items-center p-4" onClick={onClose}>
+            <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-xl p-6 w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto transition-all transform scale-95 opacity-0 animate-scale-in`} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center border-b dark:border-slate-700 pb-3 mb-4">
+                    <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
+                    <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-2xl transition-colors">&times;</button>
                 </div>
                 {children}
             </div>
+            <style>{`
+                @keyframes scale-in {
+                    to {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                }
+                .animate-scale-in {
+                    animation: scale-in 0.2s ease-out forwards;
+                }
+            `}</style>
         </div>
+    );
+};
+
+const ConfirmationModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: React.ReactNode;
+  confirmText?: string;
+  confirmButtonClass?: string;
+}> = ({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirm' }) => {
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={title} size="md">
+            <div>
+                <p className="text-slate-700 dark:text-slate-300">{message}</p>
+                <div className="flex justify-end gap-4 mt-6">
+                    <button type="button" onClick={onClose} className={buttonClasses.secondary}>Cancel</button>
+                    <button type="button" onClick={onConfirm} className={buttonClasses.destructive}>{confirmText}</button>
+                </div>
+            </div>
+        </Modal>
     );
 };
 
@@ -177,12 +299,15 @@ const PhotoUpload: React.FC<{ photos: InspectionPhoto[]; onUpload: (photo: Inspe
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files) {
-            for (const file of Array.from(event.target.files)) {
+// FIX: Cast FileList to File[] to address a type inference issue where 'file' was 'unknown'.
+            for (const file of Array.from(event.target.files) as File[]) {
                 try {
-                    const base64 = await fileToBase64(file);
+                    const base64WithMime = await resizeAndCompressImage(file, 1024, 0.8);
+                    const base64 = base64WithMime.split(',')[1]
                     onUpload({ base64, name: file.name });
                 } catch (error) {
-                    console.error("Error converting file to base64", error);
+                    console.error("Error processing image", error);
+                    alert("There was an error processing the image. Please try a different file.");
                 }
             }
         }
@@ -192,15 +317,16 @@ const PhotoUpload: React.FC<{ photos: InspectionPhoto[]; onUpload: (photo: Inspe
         <div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 mb-2">
                 {photos.map((photo, index) => (
-                    <div key={index} className="relative group">
-                        <img src={`data:image/jpeg;base64,${photo.base64}`} alt={`upload-preview-${index}`} className="w-full h-20 object-cover rounded-md" />
-                        <button type="button" onClick={() => onRemove(index)} className="absolute top-0 right-0 bg-red-600 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
+                    <div key={index} className="relative group aspect-square">
+                        <img src={`data:image/jpeg;base64,${photo.base64}`} alt={`upload-preview-${index}`} className="w-full h-full object-cover rounded-lg" />
+                        <button type="button" onClick={() => onRemove(index)} className="absolute top-1 right-1 bg-red-600 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">&times;</button>
                     </div>
                 ))}
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-20 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-md flex flex-col items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-blue-500 hover:text-blue-600 transition"
+                    className="w-full aspect-square border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:border-blue-500 hover:text-blue-600 transition"
+                    aria-label="Add Photo"
                 >
                     <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4v16m8-8H4"></path></svg>
                     <span className="text-xs mt-1">Add Photo</span>
@@ -212,75 +338,54 @@ const PhotoUpload: React.FC<{ photos: InspectionPhoto[]; onUpload: (photo: Inspe
 };
 
 const InspectionItemRow: React.FC<{ item: InspectionItem; onUpdate: (updatedItem: InspectionItem) => void; onRemove: () => void; }> = ({ item, onUpdate, onRemove }) => {
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     const handleUpdate = (field: keyof InspectionItem, value: any) => {
         onUpdate({ ...item, [field]: value });
     };
 
-    const handleAnalyze = async (photo: InspectionPhoto) => {
-        setIsAnalyzing(true);
-        try {
-            const analysis = await analyzeDefectImage(photo, item.point);
-            handleUpdate('comments', `${item.comments ? item.comments + '\n\n' : ''}AI Analysis: ${analysis}`);
-        } catch (error) {
-            console.error("AI Analysis failed:", error);
-            handleUpdate('comments', `${item.comments ? item.comments + '\n\n' : ''}AI Analysis failed.`);
-        } finally {
-            setIsAnalyzing(false);
-        }
-    };
-
     const statusClasses: { [key in InspectionStatus]: string } = {
         'Pass': 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700',
         'Fail': 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/50 dark:text-red-300 dark:border-red-700',
-        'N/A': 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600',
+        'N/A': 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600',
     };
 
     return (
-        <div className="bg-white dark:bg-gray-700/50 p-4 rounded-lg border border-gray-200 dark:border-gray-600 space-y-4">
+        <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
             <div className="flex justify-between items-start">
                 <div>
-                    <p className="font-semibold text-gray-800 dark:text-gray-100">{item.point}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{item.category}</p>
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">{item.point}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{item.category}</p>
                 </div>
-                <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 text-xl font-bold">&times;</button>
+                <button type="button" onClick={onRemove} className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 text-xl font-bold transition-colors">&times;</button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                    <select value={item.status} onChange={e => handleUpdate('status', e.target.value)} className={`w-full p-2 rounded-md border ${statusClasses[item.status]}`}>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Status</label>
+                    <select value={item.status} onChange={e => handleUpdate('status', e.target.value)} className={`w-full p-2 rounded-lg border ${statusClasses[item.status]}`}>
                         <option value="Pass">Pass</option>
                         <option value="Fail">Fail</option>
                         <option value="N/A">N/A</option>
                     </select>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
-                    <input type="text" value={item.location} onChange={e => handleUpdate('location', e.target.value)} placeholder="e.g., Master Bedroom Ceiling" className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md text-gray-900 dark:text-gray-200"/>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Location</label>
+                    <input type="text" value={item.location} onChange={e => handleUpdate('location', e.target.value)} placeholder="e.g., Master Bedroom Ceiling" className={inputClasses}/>
                 </div>
             </div>
             
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Comments</label>
-                <textarea value={item.comments} onChange={e => handleUpdate('comments', e.target.value)} placeholder="Add comments..." rows={3} className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md text-gray-900 dark:text-gray-200"></textarea>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Comments</label>
+                <textarea value={item.comments} onChange={e => handleUpdate('comments', e.target.value)} placeholder="Add comments..." rows={3} className={inputClasses}></textarea>
             </div>
             
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Photos</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Photos</label>
                  <PhotoUpload
                     photos={item.photos}
                     onUpload={(photo) => handleUpdate('photos', [...item.photos, photo])}
                     onRemove={(index) => handleUpdate('photos', item.photos.filter((_, i) => i !== index))}
                 />
-                 {item.status === 'Fail' && item.photos.length > 0 && (
-                     <div className="mt-2">
-                        <button type="button" onClick={() => handleAnalyze(item.photos[item.photos.length-1])} disabled={isAnalyzing} className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md flex items-center gap-2 disabled:bg-blue-400 dark:disabled:bg-blue-800">
-                             {isAnalyzing ? <><Spinner className="text-white"/> Analyzing...</> : 'AI Analyze Last Photo'}
-                         </button>
-                     </div>
-                 )}
             </div>
         </div>
     );
@@ -288,6 +393,8 @@ const InspectionItemRow: React.FC<{ item: InspectionItem; onUpdate: (updatedItem
 
 const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedArea: InspectionArea) => void; onRemove: () => void }> = ({ area, onUpdate, onRemove }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [customPoint, setCustomPoint] = useState('');
+    const [customCategory, setCustomCategory] = useState('Custom');
 
     const handleNameChange = (newName: string) => {
         onUpdate({ ...area, name: newName });
@@ -316,46 +423,69 @@ const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedAre
         onUpdate({ ...area, items: newItems });
     };
 
+    const handleAddCustomItem = () => {
+        if (customPoint.trim() === '') {
+            alert('Please enter a name for the custom inspection point.');
+            return;
+        }
+        handleAddItem(customCategory.trim() || 'Custom', customPoint.trim());
+        setCustomPoint('');
+        setCustomCategory('Custom');
+        setIsModalOpen(false);
+    };
+
     return (
-        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 shadow-sm mb-6 border dark:border-gray-700">
+        <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-xl p-4 shadow-sm mb-6 border dark:border-slate-700">
             <div className="flex justify-between items-center mb-4">
                 <input
                     type="text"
                     value={area.name}
                     onChange={e => handleNameChange(e.target.value)}
-                    className="text-xl font-bold bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none text-gray-900 dark:text-gray-100"
+                    className="text-xl font-bold bg-transparent border-b-2 border-transparent focus:border-blue-500 outline-none text-slate-900 dark:text-slate-100 transition-colors"
                     placeholder="Area Name"
                 />
-                <button type="button" onClick={onRemove} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-semibold">Remove Area</button>
+                <button type="button" onClick={onRemove} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-semibold transition-colors">Remove Area</button>
             </div>
             
             <div className="space-y-4">
                 {area.items.map(item => <InspectionItemRow key={item.id} item={item} onUpdate={handleUpdateItem} onRemove={() => handleRemoveItem(item.id)} />)}
             </div>
 
-            <button type="button" onClick={() => setIsModalOpen(true)} className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md w-full">
+            <button type="button" onClick={() => setIsModalOpen(true)} className={`mt-4 w-full ${buttonClasses.primary}`}>
                 Add Inspection Point
             </button>
 
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Inspection Point">
-                <div className="space-y-4">
-                    {Object.entries(INSPECTION_CATEGORIES).map(([category, points]) => (
-                        <div key={category}>
-                            <h4 className="font-semibold text-lg text-gray-700 dark:text-gray-300 mb-2 border-b dark:border-gray-600 pb-1">{category}</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                {points.map(point => (
-                                    <button
-                                        type="button"
-                                        key={point}
-                                        onClick={() => { handleAddItem(category, point); setIsModalOpen(false); }}
-                                        className="text-left p-2 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-md text-sm transition text-gray-800 dark:text-gray-300"
-                                    >
-                                        {point}
-                                    </button>
-                                ))}
+                <div className="p-4 mb-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50 dark:border-slate-600">
+                    <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2">Add Custom Point</h4>
+                    <div className="space-y-2">
+                        <input type="text" value={customPoint} onChange={(e) => setCustomPoint(e.target.value)} placeholder="e.g., Check for window seal drafts" className={inputClasses} />
+                        <input type="text" value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="Category (e.g., Windows)" className={inputClasses} />
+                        <button type="button" onClick={handleAddCustomItem} className={`w-full ${buttonClasses.primary}`}>Add Custom Point</button>
+                    </div>
+                </div>
+
+                <div className="border-t dark:border-slate-600 pt-4">
+                    <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2">Or Select a Predefined Point</h4>
+                    <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
+                        {Object.entries(INSPECTION_CATEGORIES).map(([category, points]) => (
+                            <div key={category}>
+                                <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2 border-b dark:border-slate-600 pb-1">{category}</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                    {points.map(point => (
+                                        <button
+                                            type="button"
+                                            key={point}
+                                            onClick={() => { handleAddItem(category, point); setIsModalOpen(false); }}
+                                            className="text-left p-2 bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-sm transition text-slate-800 dark:text-slate-300"
+                                        >
+                                            {point}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </Modal>
         </div>
@@ -370,13 +500,16 @@ const InspectionForm: React.FC<{ inspectionId?: string; onSave: () => void; onCa
         if (inspectionId) {
             setInspection(getInspectionById(inspectionId));
         } else {
+            const today = new Date();
+            const localTodayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
             setInspection({
                 id: `insp_${Date.now()}`,
                 clientName: '',
                 propertyLocation: '',
                 propertyType: 'Apartment',
                 inspectorName: '',
-                inspectionDate: new Date().toISOString().split('T')[0],
+                inspectionDate: localTodayString,
                 areas: [{ id: Date.now(), name: 'General', items: [] }],
             });
         }
@@ -419,12 +552,10 @@ const InspectionForm: React.FC<{ inspectionId?: string; onSave: () => void; onCa
 
     if (!inspection) return <div className="text-center p-8"><Spinner className="text-blue-600 dark:text-blue-400 mx-auto" /></div>;
 
-    const inputClasses = "p-2 border rounded-md bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200";
-
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="bg-white dark:bg-gray-800/50 p-6 rounded-lg shadow-md border dark:border-gray-700">
-                <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">Inspection Details</h2>
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+                <h2 className="text-2xl font-bold mb-4 text-slate-800 dark:text-slate-100">Inspection Details</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="text" placeholder="Client Name" value={inspection.clientName} onChange={e => handleUpdateField('clientName', e.target.value)} required className={inputClasses} />
                     <input type="text" placeholder="Property Location" value={inspection.propertyLocation} onChange={e => handleUpdateField('propertyLocation', e.target.value)} required className={inputClasses} />
@@ -453,134 +584,135 @@ const InspectionForm: React.FC<{ inspectionId?: string; onSave: () => void; onCa
             </div>
 
             <div className="flex items-center justify-between gap-4">
-                <button type="button" onClick={handleAddArea} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-4 rounded-md">
+                <button type="button" onClick={handleAddArea} className={buttonClasses.secondary}>
                     Add Another Area
                 </button>
                 <div className="flex gap-4">
-                    <button type="button" onClick={onCancel} className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
-                    <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save Inspection</button>
+                    <button type="button" onClick={onCancel} className={buttonClasses.secondary}>Cancel</button>
+                    <button type="submit" className={buttonClasses.primary}>Save Inspection</button>
                 </div>
             </div>
         </form>
     );
 };
 
+const WaslaLogo: React.FC = () => (
+    <div className="text-center">
+        <h2 className="text-2xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-500">
+            WASLA
+        </h2>
+        <p className="text-xs font-semibold tracking-wide text-teal-700 dark:text-teal-400">
+            Property Solutions
+        </p>
+    </div>
+);
+
+
 const ReportTemplate: React.FC<{ inspection: InspectionData }> = ({ inspection }) => {
-    const WaslaLogo = () => (
-        <div className="flex items-center space-x-2">
-            <div className="flex flex-col">
-                <div className="w-4 h-4 bg-green-500"></div>
-                <div className="w-4 h-2 bg-blue-500 mt-0.5"></div>
-            </div>
-            <div className="text-2xl font-bold tracking-wider text-gray-700 dark:text-gray-300">
-                <span className="text-green-500">WASLA</span>
-                <p className="text-xs font-normal tracking-normal text-gray-500 dark:text-gray-400">Property Solutions</p>
-            </div>
+    // This component is now only used for the hidden print view.
+    // PDF generation is handled programmatically by WaslaReportGenerator.
+    const Watermark = () => (
+      <div className="absolute inset-0 flex items-center justify-center -z-10" aria-hidden="true">
+        <div className="text-gray-200/60 dark:text-gray-700/40 opacity-50 select-none transform -rotate-45 scale-150">
+          <WaslaLogo />
         </div>
+      </div>
     );
-    
+
     return (
         <div className="print:block hidden">
             {/* Page 1 */}
-            <div className="printable-a4 bg-white dark:bg-gray-800 p-8 text-sm break-after-page">
-                <header className="flex justify-center items-center flex-col mb-4">
+            <div className="printable-a4 bg-white dark:bg-gray-800 p-8 text-sm break-after-page relative">
+                <Watermark />
+                <header className="flex justify-center items-center flex-col mb-8">
                     <WaslaLogo />
-                    <h1 className="text-xl font-bold mt-2 text-gray-800 dark:text-gray-100 uppercase tracking-widest">Property Inspection Report</h1>
                 </header>
                 
                 <div className="flex space-x-8">
                     {/* English Column */}
-                    <div className="w-1/2 space-y-4">
-                        <section>
-                            <h2 className="font-bold border-b pb-1 mb-2 text-base">OVERVIEW</h2>
-                            <p className="font-bold">Dear Mr. {inspection.clientName},</p>
-                            <p>Thank you for choosing Wasla Real Estate Solutions as your home inspector. Your prospective home is basically in grade () as per our inspection and classifications. However, a number of rather typical inspection issues were identified.</p>
-                            <p>Please review the annexed report carefully before making your decision. If you need further explanation regarding this property conditions, please don't hesitate to call or email us from 9:00 am to 5:00 PM at:</p>
-                            <p>Email: wasla.solution@gmail.com</p>
-                            <p>Mobile: +968 90699799</p>
-                        </section>
+                    <div className="w-1/2 space-y-3 text-justify">
+                        <h2 className="font-bold text-base text-center uppercase">OVERVIEW</h2>
+                        <p><span className="font-bold">Dear Mr. {inspection.clientName},</span></p>
+                        <p>Thank you for choosing Wasla Real Estate Solutions to carry out the inspection of your property. This report presents the inspection findings and measurements as documented on site on the date of the visit, and the presence of certain observations is common in property inspections.</p>
+                        <p>Please review the attached report carefully before making your final decision. If you require any further clarification regarding the condition of the property, please feel free to contact us by phone or email between 9:00 a.m. and 5:00 p.m.</p>
+                        <p className="text-left dir-ltr">Email: info@waslaoman.com</p>
+                        <p className="text-left dir-ltr">Mobile: +968 90699799</p>
 
-                        <section className="border-t pt-2">
+                        <section className="pt-2">
                             <h3 className="font-bold">No property is perfect.</h3>
-                            <p>Every building has imperfections or items that are ready for maintenance. It's the inspector's task to discover and report these so you can make informed decisions. This report should not be used as a tool to demean property, but rather as a way to illuminate the realities of the property.</p>
+                            <p>Every building has imperfections or items that are ready for maintenance. It’s the inspector’s task to discover and report these so you can make informed decisions. This report should not be used as a tool to demean property, but rather as a way to illuminate the realities of the property.</p>
                         </section>
                         
-                        <section className="border-t pt-2">
+                        <section className="pt-2">
                              <h3 className="font-bold">This report is not an appraisal.</h3>
                              <p>When an appraiser determines worth, only the most obvious conditions of a property are taken into account to establish a safe loan amount. In effect, the appraiser is representing the interests of the lender. Home inspectors focus more on the interests of the prospective buyer; and, although inspectors must be careful not to make any statements relating to property value, their findings can help buyers more completely understand the true costs of ownership.</p>
-                        </section>
-
-                        <section className="border-t pt-2">
-                            <h3 className="font-bold">Maintenance costs are normal.</h3>
-                            <p>Homeowners should plan to spend around 1% of the total value of a property in maintenance costs, annually. (Annual costs of rental property maintenance are often 2%, or more.) If considerably less than this percentage has been invested during several years preceding an inspection, the property will usually show the obvious signs of neglect; and the new property owners may be required to invest significant time and money to address accumulated maintenance needs.</p>
-                        </section>
-                        
-                        <section className="border-t pt-2">
-                             <h3 className="font-bold">SCOPE OF THE INSPECTION:</h3>
-                             <p>This report details the outcome of a visual survey of the property detailed in the annexed</p>
                         </section>
                     </div>
 
                     {/* Arabic Column */}
-                    <div className="w-1/2 space-y-4 text-right" dir="rtl">
-                        <section>
-                            <h2 className="font-bold border-b pb-1 mb-2 text-base">نظرة عامة</h2>
-                            <p className="font-bold">الأفاضل/ المحترمون {inspection.clientName}،</p>
-                            <p>نشكر لكم اختياركم "وصلة للحلول العقارية" للقيام بفحص العقار الخاص بكم. وفقًا للفحص والتصنيف المعتمد لدينا، فإن العقار الذي ترغبون في شرائه يقع ضمن الدرجة ()، مع وجود بعض الملاحظات التي تُعد شائعة في عمليات الفحص العقاري.</p>
-                            <p>يرجى مراجعة التقرير المرفق بعناية قبل اتخاذ قراركم النهائ، و إذا كنتم بحاجة إلى توضيحات إضافية حول حالة العقار، فلا تترددوا بالتواصل معنا عبر الهاتف أو البريد الإلكتروني من الساعة 9 صباحًا حتى 5 مساءً على وسائل التواصل التالية:</p>
-                            <p>البريد الإلكتروني: wasla.solution@gmail.com</p>
-                            <p>لهاتف: +96890699799</p>
-                        </section>
+                    <div className="w-1/2 space-y-3 text-right" dir="rtl">
+                       <h2 className="font-bold text-base text-center">نظرة عامة</h2>
+                        <p><span className="font-bold">الأفاضل/ {inspection.clientName} المحترمون،</span></p>
+                        <p>نشكر لكم اختياركم "وصلة للحلول العقارية" للقيام بفحص العقار الخاص بكم. يُقدم هذا التقرير نتائج الفحص والقياسات كما تم توثيقها ميدانيًا في تاريخ الزيارة، ووجود بعض الملاحظات يُعد أمر شائع في عمليات الفحص العقاري.</p>
+                        <p>يرجى مراجعة التقرير المرفق بعناية قبل اتخاذ قراركم النهائي، و إذا كنتم بحاجة إلى توضيحات إضافية حول حالة العقار، فلا تترددوا بالتواصل معنا عبر الهاتف أو البريد الإلكتروني من الساعة 9 صباحًا حتى 5 مساءً على وسائل التواصل التالية:</p>
+                        <p>البريد الإلكتروني: info@waslaoman.com</p>
+                        <p>الهاتف: +968 90699799</p>
                         
-                         <section className="border-t pt-2">
+                         <section className="pt-2">
                             <h3 className="font-bold">لا يوجد عقار مثالي</h3>
                             <p>كل عقار يحتوي على بعض العيوب أو الأجزاء التي تحتاج إلى صيانة. دور المفتش هو تحديد هذه النقاط وتقديمها بوضوح لمساعدتكم في اتخاذ قرارات مستنيرة. هذا التقرير لا يُقصد به التقليل من قيمة العقار، وإنما يهدف إلى توضيح الحالة الواقعية له.</p>
                         </section>
 
-                        <section className="border-t pt-2">
-                             <h3 className="font-bold">هذا التقرير ليس تقييما سعريًا</h3>
-                             <p>عند قيام المثمن بتحديد قيمة العقار، فإنه يأخذ بعين الاعتبار فقط العيوب الظاهرة لتقدير مبلغ قرض آمن. بمعنى آخر، فإن المثمن يُمثل مصلحة الجهة المقرضة. أما فاحص العقار، فيركز على مصلحة المشتري المحتمل. ورغم أن المفتش لا يحدد قيمة العقار، إلا أن نتائج الفحص تساعد المشتري في فهم التكاليف الحقيقية لامتلاك العقار.</p>
-                        </section>
-
-                         <section className="border-t pt-2">
-                            <h3 className="font-bold">تكاليف الصيانة أمر طبيعي</h3>
-                            <p>ينبغي على مالكي العقارات تخصيص ما يُعادل 1% من قيمة العقار سنويًا لأعمال الصيانة الدورية. أما العقارات المؤجرة فقد تصل النسبة إلى 2% أو أكثر. وإذا لم يتم استثمار هذه النسبة على مدى عدة سنوات، فستظهر مؤشرات واضحة على الإهمال، مما يُحتم على المالك الجديد دفع تكاليف كبيرة لاحقًا لمعالجة هذه الإهمالات.</p>
-                        </section>
-
-                         <section className="border-t pt-2">
-                             <h3 className="font-bold">نطاق الفحص</h3>
-                             <p>يوضح هذا التقرير نتيجة الفحص البصري للعقار كما هو مفصل في قائمة الفحص المرفقة، بهدف تقييم جودة التنفيذ مقارنة بالمعايير المعتمدة.</p>
+                        <section className="pt-2">
+                             <h3 className="font-bold">هذا التقرير ليس تقييمًا سعريًا</h3>
+                             <p>عند قيام المثمن بتحديد قيمة العقار، فإنه يأخذ بعين الاعتبار فقط العيوب الظاهرة لتقدير مبلغ قرض آمن. بمعنى آخر، فإن المثمن يُمثل مصلحة الجهة المُقرضة. أما فاحص العقار، فيركز على مصلحة المشتري المحتمل. ورغم أن المفتش لا يحدد قيمة العقار، إلا أن نتائج الفحص تساعد المشتري في فهم التكاليف الحقيقية لامتلاك العقار.</p>
                         </section>
                     </div>
                 </div>
             </div>
 
             {/* Page 2 */}
-            <div className="printable-a4 bg-white dark:bg-gray-800 p-8 text-sm break-after-page">
-                 <header className="flex justify-center items-center flex-col mb-4">
-                    <WaslaLogo />
-                </header>
-                
+            <div className="printable-a4 bg-white dark:bg-gray-800 p-8 text-sm break-after-page relative">
+                <Watermark />
                  <div className="flex space-x-8">
-                    <div className="w-1/2 space-y-4">
-                        <p>inspection checklist in order to check the quality of workmanship against applicable standards. It covers both the interior and the exterior of the property as well as garden, driveway and garage if relevant. Areas not inspected, for whatever reason, cannot guarantee that these areas are free from defects.</p>
-                        <p>This report was formed as per the client request as a supportive opinion to enable him to have better understanding about property conditions. Our opinion does not study the property value or the engineering of the structure rather it studies the functionality of the property. This report will be listing the property defects supported by images and videos, by showing full study of the standards of property status and functionality including other relevant elements of the property as stated in the checklist.</p>
-                        <section>
-                            <h2 className="font-bold border-b pb-1 mb-2 text-base">CONFIDENTIALITY OF THE REPORT:</h2>
-                            <p>The inspection report is to be prepared for the Client for the purpose of informing of the major deficiencies in the condition of the subject property and is solely and exclusively for Client's own information and may not be relied upon by any other person. Client may distribute copies of the inspection report to the seller and the real estate agents directly involved in this transaction, but Client and Inspector do not in any way intend to benefit said seller or the real estate agents directly or indirectly through this Agreement or the inspection report. In the event that the inspection report has been prepared for the SELLER of the subject property, an authorized representative of Wasla Real Estate Solutions will return to the property, for a fee, to meet with the BUYER for a consultation to provide a better understanding of the reported conditions and answer.</p>
+                    {/* English Column */}
+                    <div className="w-1/2 space-y-3 text-justify">
+                        <section className="pt-2">
+                            <h3 className="font-bold">Maintenance costs are normal.</h3>
+                            <p>Homeowners should plan to spend around 1% of the total value of a property in maintenance costs, annually. (Annual costs of rental property maintenance are often 2%, or more.) If considerably less than this percentage has been invested during several years preceding an inspection, the property will usually show the obvious signs of neglect; and the new property owners may be required to invest significant time and money to address accumulated maintenance needs.</p>
+                        </section>
+                        
+                        <section className="pt-2">
+                             <h3 className="font-bold">SCOPE OF THE INSPECTION:</h3>
+                             <p>This report details the outcome of a visual survey of the property detailed in the annexed inspection checklist in order to check the quality of workmanship against applicable standards. It covers both the interior and the exterior of the property as well as garden, driveway and garage if relevant. Areas not inspected, for whatever reason, cannot guarantee that these areas are free from defects.</p>
+                             <p>This report was formed as per the client request as a supportive opinion to enable him to have better understanding about property conditions. Our opinion does not study the property value or the engineering of the structure rather it studies the functionality of the property. This report will be listing the property defects supported by images and videos, by showing full study of the standards of property status and functionality including other relevant elements of the property as stated in the checklist.</p>
+                        </section>
+
+                         <section className="pt-2">
+                            <h3 className="font-bold">CONFIDENTIALITY OF THE REPORT:</h3>
+                            <p>The inspection report is to be prepared for the Client for the purpose of informing of the major deficiencies in the condition of the subject property and is solely and exclusively for Client’s own information and may not be relied upon by any other person. Client may distribute copies of the inspection report to the seller and the real estate agents directly involved in this transaction, but Client and Inspector do not in any way intend to benefit said seller or the real estate agents directly or indirectly through this Agreement or the inspection report. In the event that the inspection report has been prepared for the SELLER of the subject property, an authorized representative of Wasla Real Estate Solutions will return to the property, for a fee, to meet with the BUYER for a consultation to provide a better understanding of the reported conditions and answer.</p>
                         </section>
                     </div>
-                    <div className="w-1/2 space-y-4 text-right" dir="rtl">
-                         <p>يشمل الفحص المناطق الداخلية والخارجية، بالإضافة إلى الحديقة، والممر، والجراج (إن وجد). كما لا يمكن ضمان خلو المناطق غير المفحوصة من العيوب لأي سبب كان.</p>
-                         <p>وقد تم إعداد هذا التقرير بناءً على طلب العميل لتقديم رأي داعم يساعده على فهم حالة العقار بشكل أفضل. رأينا الفني لا يشمل تقييم القيمة السوقية أو التحليل الإنشائي، بل يركز على حالة العقار ووظائفه العامة. كما سيتم سرد العيوب المرصودة بناءً على دراسة كاملة لمعايير الحالة والأداء الوظيفي للعقار مشمولة بالصور والفيديوهات، إلى جانب العناصر الأخرى ذات الصلة كما هو موضح في قائمة الفحص.</p>
-                        <section>
-                            <h2 className="font-bold border-b pb-1 mb-2 text-base">سرية التقرية</h2>
-                            <p>تم إعداد تقرير الفحص هذا خصيصًا للعميل بغرض إعلامه بالنواقص الجوهرية في حالة العقار محل الفحص، وهو للاستخدام الشخصي فقط ولا يجوز الاعتماد عليه من قبل أي طرف آخر. يجوز للعميل مشاركة نسخة من التقرير مع البائع أو وكلاء العقارات المعنيين بهذه الصفقة، إلا أن كل من العميل والفاحص لا يقصدان من خلال هذا التقرير تحقيق أي منفعة مباشرة أو غير مباشرة لهؤلاء الأطراف. وفي حال تم إعداد هذا التقرير بطلب من البائع، فإن ممثلا معتمدًا من شركة وصلة لحلول العقار سيعود إلى العقار - مقابل رسوم - لعقد جلسة استشارية مع المشتري بهدف توضيح الملاحظات الواردة في التقرير والإجابة عن استفساراته.</p>
+
+                    {/* Arabic Column */}
+                    <div className="w-1/2 space-y-3 text-right" dir="rtl">
+                        <section className="pt-2">
+                            <h3 className="font-bold">تكاليف الصيانة أمر طبيعي</h3>
+                            <p>ينبغي على مالكي العقارات تخصيص ما يُعادل 1% من قيمة العقار سنويًا لأعمال الصيانة الدورية. أما العقارات المؤجرة فقد تصل النسبة إلى 2% أو أكثر. وإذا لم يتم استثمار هذه النسبة على مدى عدة سنوات، فستظهر مؤشرات واضحة على الإهمال، مما يُحتم على المالك الجديد دفع تكاليف كبيرة لاحقًا لمعالجة هذه الإهمالات.</p>
+                        </section>
+                         <section className="pt-2">
+                             <h3 className="font-bold">نطاق الفحص</h3>
+                             <p>يوضح هذا التقرير نتيجة الفحص البصري للعقار كما هو مفصل في قائمة الفحص المرفقة، بهدف تقييم جودة التنفيذ مقارنة بالمعايير المعتمدة. يشمل الفحص المناطق الداخلية والخارجية، بالإضافة إلى الحديقة، والممر، والجراج ( إن وُجد). كما لا يمكن ضمان خلو المناطق غير المفحوصة من العيوب لأي سببٍ كان.</p>
+                             <p>وقد تم إعداد هذا التقرير بناءً على طلب العميل لتقديم رأي داعم يساعده على فهم حالة العقار بشكل أفضل. رأينا الفني لا يشمل تقييم القيمة السوقية أو التحليل الإنشائي، بل يركز على حالة العقار ووظائفه العامة. كما سيتم سرد العيوب المرصودة بناءً على دراسة كاملة لمعايير الحالة والأداء الوظيفي للعقار مشمولة بالصور والفيديوهات، إلى جانب العناصر الأخرى ذات الصلة كما هو موضح في قائمة الفحص.</p>
+                        </section>
+                        <section className="pt-2">
+                            <h3 className="font-bold">سرية التقرير</h3>
+                            <p>تم إعداد تقرير الفحص هذا خصيصًا للعميل بغرض إعلامه بالنواقص الجوهرية في حالة العقار محل الفحص، وهو للاستخدام الشخصي فقط ولا يجوز الاعتماد عليه من قبل أي طرف آخر. يجوز للعميل مشاركة نسخة من التقرير مع البائع أو وكلاء العقارات المعنيين بهذه الصفقة، إلا أن كل من العميل والفاحص لا يقصدان من خلال هذا التقرير تحقيق أي منفعة مباشرة أو غير مباشرة لهؤلاء الأطراف. وفي حال تم إعداد هذا التقرير بطلب من البائع، فإن ممثلًا معتمدًا من شركة وصلة لحلول العقار سيعود إلى العقار – مقابل رسوم – لعقد جلسة استشارية مع المشتري بهدف توضيح الملاحظات الواردة في التقرير والإجابة عن استفساراته.</p>
                         </section>
                     </div>
                 </div>
-
-                <div className="mt-8 pt-4 border-t flex justify-between">
+                
+                <div className="mt-8 pt-4 border-t dark:border-gray-600 flex justify-between">
                     <div className="w-1/2 space-y-2">
                         <p><strong>Client Name:</strong> {inspection.clientName}</p>
                         <p><strong>Signature:</strong> ________________________</p>
@@ -588,6 +720,7 @@ const ReportTemplate: React.FC<{ inspection: InspectionData }> = ({ inspection }
                         <p><strong>Stamp:</strong></p>
                         <p><strong>Date:</strong> {formatDate(inspection.inspectionDate)}</p>
                         <p className="mt-4">Property Inspection report is annexed</p>
+                        <p className="text-xs pt-4">Wasla Property Solutions CR. 1068375</p>
                     </div>
                      <div className="w-1/2 space-y-2 text-right" dir="rtl">
                         <p><strong>اسم العميل:</strong> {inspection.clientName}</p>
@@ -596,33 +729,9 @@ const ReportTemplate: React.FC<{ inspection: InspectionData }> = ({ inspection }
                         <p><strong>الختم:</strong></p>
                         <p><strong>التاريخ:</strong> {formatDate(inspection.inspectionDate)}</p>
                         <p className="mt-4">مرفق تقرير الفحص</p>
+                        <p className="text-xs pt-4">وصلة للحلول العقارية س ت 1068375</p>
                     </div>
                 </div>
-                
-                <table className="w-full mt-8 border-collapse border text-center">
-                    <thead>
-                        <tr className="bg-gray-100 dark:bg-gray-700">
-                            <th className="border p-2">Grade</th>
-                            <th className="border p-2">AAA</th>
-                            <th className="border p-2">AA</th>
-                            <th className="border p-2">A</th>
-                            <th className="border p-2">B</th>
-                            <th className="border p-2">C</th>
-                            <th className="border p-2">D</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td className="border p-2 font-bold">Description</td>
-                            <td className="border p-2">Excellent</td>
-                            <td className="border p-2">Very Good</td>
-                            <td className="border p-2">Good</td>
-                            <td className="border p-2">Meeting the standards</td>
-                            <td className="border p-2">Acceptable</td>
-                            <td className="border p-2">Require maintenance</td>
-                        </tr>
-                    </tbody>
-                </table>
             </div>
         </div>
     );
@@ -630,177 +739,128 @@ const ReportTemplate: React.FC<{ inspection: InspectionData }> = ({ inspection }
 
 
 const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onEdit: (id: string) => void }> = ({ inspectionId, onBack, onEdit }) => {
-    const { getInspectionById, saveInspection } = useInspections();
+    const { getInspectionById } = useInspections();
     const [inspection, setInspection] = useState<InspectionData | null>(null);
-    const [isSummaryLoading, setIsSummaryLoading] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
         setInspection(getInspectionById(inspectionId));
     }, [inspectionId]);
     
-    const handleGenerateSummary = async () => {
-        if (!inspection) return;
-        setIsSummaryLoading(true);
-        const failedItems = inspection.areas.flatMap(area => area.items.filter(item => item.status === 'Fail'));
-        const summary = await generateReportSummary(failedItems);
-        const updatedInspection = { ...inspection, aiSummary: summary };
-        setInspection(updatedInspection);
-        saveInspection(updatedInspection);
-        setIsSummaryLoading(false);
-    };
-
     const handleExportPDF = async () => {
-        const reportContainer = document.getElementById('full-report-container');
-        const contentElement = document.getElementById('report-content');
-        if (!reportContainer || !contentElement || !inspection) return;
+        if (!inspection) {
+            alert("Inspection data not loaded yet.");
+            return;
+        }
 
         setIsExporting(true);
-        // Temporarily make the template visible for html2canvas
-        const templateContainer = reportContainer.querySelector('.print\\:block') as HTMLElement;
-        if(templateContainer) templateContainer.classList.remove('hidden');
-
         try {
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-
-            const commonCanvasOptions = {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#ffffff', // Force white background
-            };
-
-            // --- Pages from ReportTemplate ---
-            const templatePages = templateContainer.querySelectorAll('.printable-a4');
-            for (let i = 0; i < templatePages.length; i++) {
-                const page = templatePages[i] as HTMLElement;
-                const canvas = await html2canvas(page, commonCanvasOptions);
-                const imgData = canvas.toDataURL('image/png');
-                if (i > 0) pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            }
-
-            // --- Main Content Page(s) ---
-            // This element's height is dynamic.
-            const contentCanvas = await html2canvas(contentElement, {
-                ...commonCanvasOptions,
-                windowHeight: contentElement.scrollHeight,
-                scrollY: 0,
-            });
-            const contentImgData = contentCanvas.toDataURL('image/png');
-            const contentImgProps = pdf.getImageProperties(contentImgData);
-            const contentPdfWidth = pdf.internal.pageSize.getWidth();
-            const totalContentPDFHeight = (contentImgProps.height * contentPdfWidth) / contentImgProps.width;
-
-            let position = 0;
-            let heightLeft = totalContentPDFHeight;
+            const reportGenerator = new WaslaReportGenerator();
+            await reportGenerator.initialize();
             
-            pdf.addPage();
-            pdf.addImage(contentImgData, 'PNG', 0, position, contentPdfWidth, totalContentPDFHeight);
-            heightLeft -= pdfHeight;
+            const pdf = await reportGenerator.generateReport(inspection);
 
-            while (heightLeft > 0) {
-                position -= pdfHeight;
-                pdf.addPage();
-                pdf.addImage(contentImgData, 'PNG', 0, position, contentPdfWidth, totalContentPDFHeight);
-                heightLeft -= pdfHeight;
-            }
+            const clientName = inspection.clientName.replace(/\s/g, '_') || 'Report';
+            const date = new Date().toISOString().split('T')[0];
+            const filename = `Wasla-Report-${clientName}-${date}.pdf`;
             
-            pdf.save(`inspection-report-${inspection.id}.pdf`);
+            pdf.save(filename);
+            
         } catch (error) {
-            console.error("Error exporting to PDF:", error);
-            alert("Sorry, there was an error exporting the report to PDF.");
+            console.error('PDF Export Error:', error);
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            alert(`Failed to generate PDF: ${errorMessage}`);
         } finally {
             setIsExporting(false);
-            if(templateContainer) templateContainer.classList.add('hidden');
         }
     };
 
 
-    if (!inspection) return <div className="text-center p-8 text-gray-600 dark:text-gray-400">Report not found.</div>;
+    if (!inspection) return <div className="text-center p-8 text-slate-600 dark:text-slate-400">Report not found.</div>;
 
-    const statusColors: { [key in InspectionStatus]: string } = {
-        'Pass': 'text-green-600 dark:text-green-400',
-        'Fail': 'text-red-600 dark:text-red-400',
-        'N/A': 'text-gray-500 dark:text-gray-400',
+    const statusBadgeClasses: { [key in InspectionStatus]: string } = {
+        'Pass': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
+        'Fail': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
+        'N/A': 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300',
     };
     
     return (
         <div className="w-full">
             <div className="flex justify-between items-center mb-6 print:hidden">
-                <button onClick={onBack} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-4 rounded-md">&larr; Back to Inspections</button>
+                <button onClick={onBack} className={buttonClasses.secondary}>&larr; Back to Inspections</button>
                 <div className="flex gap-2">
-                    <button onClick={() => onEdit(inspectionId)} className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md">Edit</button>
-                    <button onClick={handleExportPDF} disabled={isExporting} className="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded-md flex items-center justify-center disabled:bg-orange-400">
+                    <button onClick={() => onEdit(inspectionId)} className={buttonClasses.secondary}>Edit</button>
+                    <button onClick={handleExportPDF} disabled={isExporting} className={`${buttonClasses.primary} flex items-center gap-2 bg-orange-500 hover:bg-orange-600`}>
                         {isExporting ? <><Spinner /> Exporting...</> : 'Export to PDF'}
                     </button>
-                    <button onClick={() => window.print()} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md">Print Report</button>
                 </div>
             </div>
 
             <div id="full-report-container">
                 <ReportTemplate inspection={inspection} />
-                <div id="report-content" className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg border dark:border-gray-700 printable-a4">
-                     <header className="border-b-2 border-blue-500 pb-4 mb-8">
-                        <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Property Inspection Report</h1>
-                        <p className="text-lg text-gray-600 dark:text-gray-300">{inspection.propertyLocation}</p>
+                <div id="report-content" className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border dark:border-slate-700 printable-a4">
+                     <header className="flex justify-between items-start border-b-2 border-slate-200 dark:border-slate-700 pb-4 mb-6">
+                        <div className="flex-shrink-0">
+                           <WaslaLogo />
+                        </div>
+                        <div className="text-right">
+                            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Inspection Report</h1>
+                            <p className="text-md text-slate-600 dark:text-slate-300">{inspection.propertyLocation}</p>
+                        </div>
                     </header>
                     
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 mb-8 text-sm">
-                        <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Client:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.clientName}</span></div>
-                        <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Inspector:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.inspectorName}</span></div>
-                        <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Date:</strong> <span className="text-gray-800 dark:text-gray-200">{formatDate(inspection.inspectionDate)}</span></div>
-                         <div className="flex justify-between"><strong className="text-gray-600 dark:text-gray-400">Property Type:</strong> <span className="text-gray-800 dark:text-gray-200">{inspection.propertyType}</span></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mb-8 text-sm p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                        <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Client:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{inspection.clientName}</span></div>
+                        <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Inspector:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{inspection.inspectorName}</span></div>
+                        <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Date:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{formatDate(inspection.inspectionDate)}</span></div>
+                         <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Property Type:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{inspection.propertyType}</span></div>
                     </div>
 
-                    <div className="mb-8">
-                        <div className="flex justify-between items-center mb-2">
-                            <h2 className="text-2xl font-bold text-blue-700 dark:text-blue-400 border-b-2 border-blue-200 dark:border-blue-800 pb-2">Executive Summary</h2>
-                            {!inspection.aiSummary && (
-                                 <button onClick={handleGenerateSummary} disabled={isSummaryLoading} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center gap-2 disabled:bg-blue-300 print:hidden">
-                                    {isSummaryLoading ? <><Spinner /> Generating...</> : 'Generate AI Summary'}
-                                </button>
-                            )}
+                    <div className="mb-8 p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center mb-2">
+                            <svg className="h-6 w-6 text-blue-600 dark:text-blue-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Executive Summary</h2>
                         </div>
                         {inspection.aiSummary ? (
-                            <div className="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{inspection.aiSummary}</div>
+                            <div className="prose prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 whitespace-pre-wrap ml-9">{inspection.aiSummary}</div>
                         ) : (
-                            <p className="text-gray-500 dark:text-gray-400 italic">Generate an AI summary for a quick overview of the key findings.</p>
+                            <p className="text-slate-500 dark:text-slate-400 italic ml-9">No summary was generated for this report.</p>
                         )}
                     </div>
 
                     {inspection.areas.map(area => (
                         <div key={area.id} className="mb-8 break-inside-avoid">
-                            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 bg-gray-100 dark:bg-gray-700 p-3 rounded-t-md border-b-2 border-blue-500">{area.name}</h3>
-                            <div className="border border-t-0 dark:border-gray-600 rounded-b-md">
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 pb-2 mb-4 border-b-2 border-blue-500">{area.name}</h3>
+                            <div className="space-y-4">
                                {area.items.length > 0 ? area.items.map(item => (
-                                   <div key={item.id} className="p-4 border-b last:border-b-0 dark:border-gray-600 break-inside-avoid-page">
+                                   <div key={item.id} className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 break-inside-avoid-page bg-white dark:bg-slate-800/50 shadow-sm">
                                         <div className="flex justify-between items-start">
-                                            <p className="font-semibold text-gray-900 dark:text-gray-200">{item.point}</p>
-                                            <span className={`font-bold text-lg ${statusColors[item.status]}`}>{item.status}</span>
+                                            <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex-1 pr-4">{item.point}</h4>
+                                            <span className={`px-3 py-1 text-sm font-semibold rounded-full ${statusBadgeClasses[item.status]} flex-shrink-0`}>{item.status}</span>
                                         </div>
-                                        {item.location && <p className="text-sm text-gray-500 dark:text-gray-400"><strong>Location:</strong> {item.location}</p>}
-                                        {item.comments && <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 whitespace-pre-wrap"><strong>Comments:</strong> {item.comments}</p>}
+                                        {(item.location || item.comments) && (
+                                            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                                                {item.location && <p className="text-sm text-slate-600 dark:text-slate-300"><strong className="font-semibold text-slate-700 dark:text-slate-200">Location:</strong> {item.location}</p>}
+                                                {item.comments && <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap"><strong className="font-semibold text-slate-700 dark:text-slate-200">Comments:</strong> {item.comments}</p>}
+                                            </div>
+                                        )}
                                        {item.photos.length > 0 && (
-                                           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                                           <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                                                {item.photos.map((photo, index) => (
-                                                   <img key={index} src={`data:image/jpeg;base64,${photo.base64}`} alt={`${item.point} photo ${index+1}`} className="rounded-md shadow-sm w-full object-cover"/>
+                                                   <a key={index} href={`data:image/jpeg;base64,${photo.base64}`} target="_blank" rel="noopener noreferrer" className="group">
+                                                        <img src={`data:image/jpeg;base64,${photo.base64}`} alt={`${item.point} photo ${index+1}`} className="rounded-lg w-full aspect-square object-cover group-hover:opacity-80 transition-opacity"/>
+                                                   </a>
                                                ))}
                                            </div>
                                        )}
                                    </div>
-                               )) : <p className="p-4 text-gray-500 dark:text-gray-400">No items inspected in this area.</p>}
+                               )) : <p className="p-4 text-slate-500 dark:text-slate-400">No items inspected in this area.</p>}
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
              <style>{`
-                .break-after-page {
-                    break-after: page;
-                    page-break-after: always;
-                }
                 @media print {
                     @page {
                         size: A4;
@@ -812,8 +872,6 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                     html, body {
                         background-color: #fff !important;
                         color: #000 !important;
-                        width: 210mm;
-                        height: 297mm;
                     }
                     #report-content, #invoice-content, .printable-a4 {
                         box-shadow: none !important;
@@ -823,43 +881,25 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                         margin: 0;
                         padding: 20mm;
                         width: 210mm;
-                        height: 297mm;
+                        min-height: 297mm;
                         box-sizing: border-box;
-                    }
-                    #report-content {
-                        height: auto;
-                    }
-                     #full-report-container {
-                        margin: 0 !important;
-                        padding: 0 !important;
                     }
                     .dark * {
                         color: #000 !important;
                         background-color: transparent !important;
                         border-color: #ccc !important;
                     }
-                    h1, h2, h3 {
-                        color: #111827 !important;
-                    }
-                    .bg-gray-100 {
-                        background-color: #f3f4f6 !important;
-                    }
-                    .border-blue-500 {
-                        border-color: #3b82f6 !important;
-                    }
-                    .break-inside-avoid { page-break-inside: avoid; }
                     .break-inside-avoid-page { page-break-inside: avoid; }
+                    .break-after-page { page-break-after: always; }
                 }
                 .printable-a4 {
                     width: 210mm;
                     min-height: 297mm;
-                    padding: 20mm; /* Updated for ~1-inch margins */
+                    padding: 20mm;
                     margin: 1rem auto;
-                    box-sizing: border-box; /* To include padding in width */
-                }
-                #report-content.printable-a4 {
-                    /* This allows html2canvas to capture the full scroll height */
-                    min-height: auto;
+                    box-sizing: border-box;
+                    position: relative;
+                    z-index: 0;
                 }
             `}</style>
         </div>
@@ -870,15 +910,21 @@ const InspectionsDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id
     const { getInspections, deleteInspection } = useInspections();
     const [inspections, setInspections] = useState<InspectionData[]>([]);
     const [filter, setFilter] = useState<string>('All');
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         setInspections(getInspections());
     }, []);
 
-    const handleDelete = (id: string) => {
-        if (window.confirm("Are you sure you want to delete this inspection?")) {
-            deleteInspection(id);
+    const handleDeleteRequest = (id: string) => {
+        setDeletingId(id);
+    };
+
+    const confirmDelete = () => {
+        if (deletingId) {
+            deleteInspection(deletingId);
             setInspections(getInspections());
+            setDeletingId(null);
         }
     };
 
@@ -887,14 +933,14 @@ const InspectionsDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id
     return (
         <div className="w-full">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-4 w-full sm:w-auto">
+                 <div className="flex items-center gap-4 w-full sm:w-auto">
                      <div className="flex-grow">
                         <label htmlFor="propertyTypeFilter" className="sr-only">Filter by property type</label>
                         <select
                             id="propertyTypeFilter"
                             value={filter}
                             onChange={(e) => setFilter(e.target.value)}
-                            className="p-2 border rounded-md w-full bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200"
+                            className={inputClasses}
                         >
                             <option value="All">All Property Types</option>
                             <option value="Apartment">Apartment</option>
@@ -903,44 +949,52 @@ const InspectionsDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id
                             <option value="Other">Other</option>
                         </select>
                     </div>
-                    <button onClick={onCreate} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-md whitespace-nowrap">
-                        New Inspection
-                    </button>
                 </div>
+                <button onClick={onCreate} className={buttonClasses.primary}>
+                    New Inspection
+                </button>
             </div>
             
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md border dark:border-gray-700">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
                 {filteredInspections.length > 0 ? (
-                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                    <ul className="divide-y divide-slate-200 dark:divide-slate-700">
                         {filteredInspections.map(insp => (
-                            <li key={insp.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                            <li key={insp.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                 <div>
                                     <h3 className="font-semibold text-lg text-blue-700 dark:text-blue-400">{insp.propertyLocation}</h3>
-                                    <p className="text-gray-600 dark:text-gray-300">Client: {insp.clientName}</p>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400">Date: {formatDate(insp.inspectionDate)} | Type: {insp.propertyType}</p>
+                                    <p className="text-slate-600 dark:text-slate-300">Client: {insp.clientName}</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Date: {formatDate(insp.inspectionDate)} | Type: {insp.propertyType}</p>
                                 </div>
                                 <div className="flex gap-2 self-end md:self-center">
-                                    <button onClick={() => onView(insp.id)} className="bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-200 font-semibold py-1 px-3 rounded-md text-sm">View Report</button>
-                                     <button onClick={() => onEdit(insp.id)} className="bg-indigo-100 dark:bg-indigo-900/50 hover:bg-indigo-200 dark:hover:bg-indigo-900 text-indigo-800 dark:text-indigo-300 font-semibold py-1 px-3 rounded-md text-sm">Edit</button>
-                                    <button onClick={() => handleDelete(insp.id)} className="bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-800 dark:text-red-300 font-semibold py-1 px-3 rounded-md text-sm">Delete</button>
+                                    <button onClick={() => onView(insp.id)} className={buttonClasses.secondary}>View Report</button>
+                                     <button onClick={() => onEdit(insp.id)} className="bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900 text-blue-800 dark:text-blue-300 font-semibold py-2 px-4 rounded-lg text-sm transition-colors">Edit</button>
+                                    <button onClick={() => handleDeleteRequest(insp.id)} className="bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-800 dark:text-red-300 font-semibold py-2 px-4 rounded-lg text-sm transition-colors">Delete</button>
                                 </div>
                             </li>
                         ))}
                     </ul>
                 ) : (
-                    <div className="text-center p-12 text-gray-500 dark:text-gray-400">
+                    <div className="text-center p-12 text-slate-500 dark:text-slate-400">
                         <h3 className="text-xl font-semibold">No inspections found.</h3>
                         <p>{filter === 'All' ? 'Click "New Inspection" to get started.' : `No inspections match the filter "${filter}".`}</p>
                     </div>
                 )}
             </div>
+            <ConfirmationModal
+                isOpen={!!deletingId}
+                onClose={() => setDeletingId(null)}
+                onConfirm={confirmDelete}
+                title="Delete Inspection"
+                message="Are you sure you want to delete this inspection? This action cannot be undone."
+                confirmText="Delete"
+            />
         </div>
     );
 };
 
 const PlaceholderPage: React.FC<{title: string}> = ({title}) => (
     <div className="flex items-center justify-center h-full">
-        <div className="text-center p-12 text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-800 rounded-lg shadow-md border dark:border-gray-700">
+        <div className="text-center p-12 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
             <h3 className="text-2xl font-semibold">{title}</h3>
             <p>This section is under construction. Check back soon!</p>
         </div>
@@ -948,22 +1002,27 @@ const PlaceholderPage: React.FC<{title: string}> = ({title}) => (
 );
 
 // --- New Dashboard Components ---
-const StatCard: React.FC<{ title: string; value: string; change: string; changeType: 'increase' | 'decrease' }> = ({ title, value, change, changeType }) => {
+const StatCard: React.FC<{ title: string; value: string; change: string; changeType: 'increase' | 'decrease', icon: React.ReactNode, color: string }> = ({ title, value, change, changeType, icon, color }) => {
     const isIncrease = changeType === 'increase';
     return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-            <h4 className="text-sm font-medium text-gray-500 dark:text-slate-400">{title}</h4>
-            <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
-            {change && (
-                 <div className={`text-sm flex items-center mt-2 ${isIncrease ? 'text-green-500' : 'text-red-500'}`}>
-                    {isIncrease ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
-                    ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                    )}
-                    {change}
-                </div>
-            )}
+        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-5">
+            <div className={`flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-full ${color}`}>
+                {icon}
+            </div>
+            <div>
+                <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</h4>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+                {change && (
+                     <div className={`text-sm flex items-center mt-1 ${isIncrease ? 'text-green-500' : 'text-red-500'}`}>
+                        {isIncrease ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7" /></svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                        )}
+                        {change}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
@@ -1054,8 +1113,10 @@ const Dashboard: React.FC = () => {
         datasets: [{
             label: 'Revenue',
             data: dashboardData.barChartDataPoints,
-            backgroundColor: '#3b82f6', // blue-500
-            borderRadius: 4,
+            backgroundColor: 'rgba(59, 130, 246, 0.8)', // blue-500
+            borderColor: 'rgba(59, 130, 246, 1)',
+            borderWidth: 1,
+            borderRadius: 6,
         }],
     };
     
@@ -1063,7 +1124,7 @@ const Dashboard: React.FC = () => {
         labels: dashboardData.pieChartLabels,
         datasets: [{
             data: dashboardData.pieChartDataPoints,
-            backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#6b7280'], // emerald-500, red-500, amber-500, gray-500
+            backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#6b7280'], // emerald, red, amber, slate
             borderColor: isDarkMode ? '#1e293b' : '#ffffff', // slate-800 for dark
             borderWidth: 4,
         }],
@@ -1103,21 +1164,49 @@ const Dashboard: React.FC = () => {
     return (
         <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Total Inspections" value={dashboardData.totalInspections.toString()} change={`+${dashboardData.inspectionsThisMonth} this month`} changeType="increase" />
-                <StatCard title="Total Revenue" value={formatCurrency(dashboardData.totalRevenue, '')} change={`+${formatCurrency(dashboardData.revenueThisMonth, '')} this month`} changeType="increase" />
-                <StatCard title="Active Clients" value={dashboardData.totalClients.toString()} change="" changeType="increase" />
-                <StatCard title="Overdue Invoices" value={dashboardData.overdueInvoicesCount.toString()} change="" changeType="decrease" />
+                 <StatCard 
+                    title="Total Inspections" 
+                    value={dashboardData.totalInspections.toString()} 
+                    change={`+${dashboardData.inspectionsThisMonth} this month`} 
+                    changeType="increase"
+                    color="bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300"
+                    icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>}
+                 />
+                <StatCard 
+                    title="Total Revenue" 
+                    value={formatCurrency(dashboardData.totalRevenue, 'OMR')} 
+                    change={`+${formatCurrency(dashboardData.revenueThisMonth, '')} this month`} 
+                    changeType="increase" 
+                    color="bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-300"
+                    icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>}
+                />
+                <StatCard 
+                    title="Active Clients" 
+                    value={dashboardData.totalClients.toString()} 
+                    change="" 
+                    changeType="increase"
+                    color="bg-teal-100 dark:bg-teal-500/20 text-teal-600 dark:text-teal-300"
+                    icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}
+                />
+                <StatCard 
+                    title="Overdue Invoices" 
+                    value={dashboardData.overdueInvoicesCount.toString()} 
+                    change="" 
+                    changeType="decrease"
+                    color="bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300"
+                    icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                <div className="lg:col-span-3 bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Revenue Overview</h3>
+                <div className="lg:col-span-3 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Revenue Overview</h3>
                     <div className="h-72">
                         <Bar options={chartOptions('Revenue Overview')} data={barChartData} />
                     </div>
                 </div>
-                <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Invoice Status</h3>
+                <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Invoice Status</h3>
                      <div className="h-72">
                         <Pie data={pieChartData} options={pieOptions} />
                     </div>
@@ -1157,8 +1246,6 @@ const ClientFormModal: React.FC<{ client?: Client; onClose: () => void; onSave: 
         onSave(formData);
         onClose();
     };
-    
-    const inputClasses = "w-full p-2 border rounded-md bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200";
 
     return (
         <Modal isOpen={true} onClose={onClose} title={client ? "Edit Client" : "Add New Client"} size="xl">
@@ -1170,11 +1257,11 @@ const ClientFormModal: React.FC<{ client?: Client; onClose: () => void; onSave: 
                 </div>
                 <textarea name="address" value={formData.address} onChange={handleChange} placeholder="Client Address" rows={3} className={inputClasses}></textarea>
                 
-                <div className="border-t dark:border-gray-600 pt-4">
-                    <h4 className="font-semibold mb-2 text-gray-800 dark:text-gray-200">Properties</h4>
+                <div className="border-t dark:border-slate-600 pt-4">
+                    <h4 className="font-semibold mb-2 text-slate-800 dark:text-slate-200">Properties</h4>
                     <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                         {formData.properties.map((prop, index) => (
-                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center bg-gray-50 dark:bg-gray-700/50 p-2 rounded-md">
+                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg">
                                 <input name="location" value={prop.location} onChange={(e) => handlePropertyChange(index, e)} placeholder="Location" required className={`${inputClasses} md:col-span-2`} />
                                 <input name="size" type="number" value={prop.size} onChange={(e) => handlePropertyChange(index, e)} placeholder="Size (sqm)" required className={inputClasses} />
                                 <div className="flex items-center gap-2">
@@ -1182,17 +1269,17 @@ const ClientFormModal: React.FC<{ client?: Client; onClose: () => void; onSave: 
                                         <option value="Residential">Residential</option>
                                         <option value="Commercial">Commercial</option>
                                     </select>
-                                    <button type="button" onClick={() => removeProperty(index)} className="text-red-500 hover:text-red-700 text-2xl">&times;</button>
+                                    <button type="button" onClick={() => removeProperty(index)} className="text-red-500 hover:text-red-700 text-2xl transition-colors">&times;</button>
                                 </div>
                             </div>
                         ))}
                     </div>
-                    <button type="button" onClick={addProperty} className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold">+ Add Property</button>
+                    <button type="button" onClick={addProperty} className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold transition-colors">+ Add Property</button>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4">
-                    <button type="button" onClick={onClose} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-md">Cancel</button>
-                    <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save Client</button>
+                    <button type="button" onClick={onClose} className={buttonClasses.secondary}>Cancel</button>
+                    <button type="submit" className={buttonClasses.primary}>Save Client</button>
                 </div>
             </form>
         </Modal>
@@ -1204,6 +1291,8 @@ const ClientsPage: React.FC<{}> = ({}) => {
     const [clients, setClients] = useState<Client[]>([]);
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
         setClients(getClients());
@@ -1214,10 +1303,15 @@ const ClientsPage: React.FC<{}> = ({}) => {
         setClients(getClients());
     };
 
-    const handleDelete = (id: string) => {
-        if (window.confirm("Are you sure you want to delete this client and all their properties?")) {
-            deleteClient(id);
+    const handleDeleteRequest = (id: string) => {
+        setDeletingId(id);
+    };
+
+    const confirmDelete = () => {
+        if (deletingId) {
+            deleteClient(deletingId);
             setClients(getClients());
+            setDeletingId(null);
         }
     };
     
@@ -1226,47 +1320,89 @@ const ClientsPage: React.FC<{}> = ({}) => {
         setIsModalOpen(true);
     };
 
+    const filteredClients = clients.filter(client =>
+        client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        client.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
         <div className="w-full">
-            <div className="flex justify-end mb-6">
-                <button onClick={() => openModal()} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-md">
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className={`${inputClasses} w-full sm:w-72`}
+                />
+                <button onClick={() => openModal()} className={buttonClasses.primary}>
                     Add New Client
                 </button>
             </div>
 
             {isModalOpen && <ClientFormModal client={editingClient || undefined} onClose={() => setIsModalOpen(false)} onSave={handleSave} />}
 
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md border dark:border-gray-700">
-                {clients.length > 0 ? (
-                    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {clients.map(client => (
-                            <li key={client.id} className="p-4 flex flex-col md:flex-row justify-between items-start gap-4">
-                                <div className="flex-1">
-                                    <h3 className="font-semibold text-lg text-blue-700 dark:text-blue-400">{client.name}</h3>
-                                    <p className="text-gray-600 dark:text-gray-300">{client.email} | {client.phone}</p>
-                                    <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                                        <strong className="block">Properties:</strong>
-                                        {client.properties.length > 0 ? (
-                                            <ul className="list-disc pl-5">
-                                                {client.properties.map(p => <li key={p.id}>{p.location} ({p.type}, {p.size} sqm)</li>)}
-                                            </ul>
-                                        ) : "No properties listed."}
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
+                {filteredClients.length > 0 ? (
+                    <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {filteredClients.map(client => (
+                            <li key={client.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h3 className="font-semibold text-lg text-blue-700 dark:text-blue-400">{client.name}</h3>
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 text-sm text-slate-600 dark:text-slate-300 mt-1">
+                                            <span className="flex items-center gap-1.5">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                                {client.email}
+                                            </span>
+                                            {client.phone &&
+                                                <span className="flex items-center gap-1.5 mt-1 sm:mt-0">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                                                    {client.phone}
+                                                </span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 self-start flex-shrink-0">
+                                        <button onClick={() => openModal(client)} className="bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900 text-blue-800 dark:text-blue-300 font-semibold py-1 px-3 rounded-lg text-sm transition-colors">Edit</button>
+                                        <button onClick={() => handleDeleteRequest(client.id)} className="bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-800 dark:text-red-300 font-semibold py-1 px-3 rounded-lg text-sm transition-colors">Delete</button>
                                     </div>
                                 </div>
-                                <div className="flex gap-2 self-end md:self-start">
-                                    <button onClick={() => openModal(client)} className="bg-indigo-100 dark:bg-indigo-900/50 hover:bg-indigo-200 dark:hover:bg-indigo-900 text-indigo-800 dark:text-indigo-300 font-semibold py-1 px-3 rounded-md text-sm">Edit</button>
-                                    <button onClick={() => handleDelete(client.id)} className="bg-red-100 dark:bg-red-900/50 hover:bg-red-200 dark:hover:bg-red-900 text-red-800 dark:text-red-300 font-semibold py-1 px-3 rounded-md text-sm">Delete</button>
-                                </div>
+                                {client.properties.length > 0 &&
+                                    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                                        <h4 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-2">Properties</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {client.properties.map(p => (
+                                                <div key={p.id} className="bg-slate-100 dark:bg-slate-700 rounded-full px-3 py-1 text-xs flex items-center gap-2">
+                                                    <span className={`font-bold ${p.type === 'Residential' ? 'text-green-600 dark:text-green-400' : 'text-purple-600 dark:text-purple-400'}`}>{p.type}</span>
+                                                    <span className="text-slate-700 dark:text-slate-300">{p.location}</span>
+                                                    <span className="text-slate-500 dark:text-slate-400">({p.size} sqm)</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                }
                             </li>
                         ))}
                     </ul>
                 ) : (
-                    <div className="text-center p-12 text-gray-500 dark:text-gray-400">
+                    <div className="text-center p-12 text-slate-500 dark:text-slate-400">
                         <h3 className="text-xl font-semibold">No clients found.</h3>
-                        <p>Click "Add New Client" to get started.</p>
+                        {searchTerm ? 
+                            <p>Your search for "{searchTerm}" did not return any results.</p> : 
+                            <p>Click "Add New Client" to get started.</p>
+                        }
                     </div>
                 )}
             </div>
+            <ConfirmationModal
+                isOpen={!!deletingId}
+                onClose={() => setDeletingId(null)}
+                onConfirm={confirmDelete}
+                title="Delete Client"
+                message="Are you sure you want to delete this client and all their properties? This action is permanent."
+                confirmText="Delete"
+            />
         </div>
     );
 };
@@ -1277,15 +1413,21 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
+    const [deletingId, setDeletingId] = useState<string | null>(null);
 
     useEffect(() => {
         setInvoices(getInvoices());
     }, []);
     
-    const handleDelete = (id: string) => {
-        if(window.confirm("Are you sure you want to delete this invoice?")) {
-            deleteInvoice(id);
+    const handleDeleteRequest = (id: string) => {
+        setDeletingId(id);
+    };
+
+    const confirmDelete = () => {
+        if (deletingId) {
+            deleteInvoice(deletingId);
             setInvoices(getInvoices());
+            setDeletingId(null);
         }
     };
     
@@ -1299,15 +1441,15 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
         'Paid': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
         'Unpaid': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
         'Partial': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300',
-        'Draft': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
+        'Draft': 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300',
     };
 
     return (
         <div className="w-full">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-4 w-full sm:w-auto flex-grow">
-                    <input type="text" placeholder="Search by client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2 border rounded-md w-full sm:w-64 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200" />
-                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="p-2 border rounded-md bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200">
+                    <input type="text" placeholder="Search by client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`${inputClasses} w-full sm:w-64`} />
+                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className={inputClasses}>
                         <option value="All">All Statuses</option>
                         <option value="Paid">Paid</option>
                         <option value="Unpaid">Unpaid</option>
@@ -1315,39 +1457,39 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
                         <option value="Draft">Draft</option>
                     </select>
                 </div>
-                <button onClick={onCreate} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-5 rounded-md whitespace-nowrap">
+                <button onClick={onCreate} className={buttonClasses.primary}>
                     New Invoice
                 </button>
             </div>
             
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md border dark:border-gray-700 overflow-x-auto">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-x-auto">
                 {filteredInvoices.length > 0 ? (
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-50 dark:bg-slate-700">
+                    <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
+                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-400">
                             <tr>
-                                <th className="p-4 font-semibold">Invoice #</th>
-                                <th className="p-4 font-semibold">Client</th>
-                                <th className="p-4 font-semibold">Date</th>
-                                <th className="p-4 font-semibold">Due Date</th>
-                                <th className="p-4 font-semibold">Amount</th>
-                                <th className="p-4 font-semibold">Status</th>
-                                <th className="p-4 font-semibold">Actions</th>
+                                <th scope="col" className="p-4 font-semibold">Invoice #</th>
+                                <th scope="col" className="p-4 font-semibold">Client</th>
+                                <th scope="col" className="p-4 font-semibold">Date</th>
+                                <th scope="col" className="p-4 font-semibold">Due Date</th>
+                                <th scope="col" className="p-4 font-semibold">Amount</th>
+                                <th scope="col" className="p-4 font-semibold">Status</th>
+                                <th scope="col" className="p-4 font-semibold text-center">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        <tbody>
                             {filteredInvoices.map(inv => (
-                                <tr key={inv.id} className="hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                                <tr key={inv.id} className="bg-white border-b dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600/50">
                                     <td className="p-4 font-medium text-blue-600 dark:text-blue-400">{inv.invoiceNumber}</td>
-                                    <td className="p-4">{inv.clientName}</td>
+                                    <td className="p-4 text-slate-900 dark:text-slate-200">{inv.clientName}</td>
                                     <td className="p-4">{formatDate(inv.invoiceDate)}</td>
                                     <td className="p-4">{formatDate(inv.dueDate)}</td>
-                                    <td className="p-4 font-mono">{formatCurrency(inv.totalAmount)}</td>
+                                    <td className="p-4 font-mono text-slate-900 dark:text-slate-200">{formatCurrency(inv.totalAmount)}</td>
                                     <td className="p-4"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusClasses[inv.status]}`}>{inv.status}</span></td>
                                     <td className="p-4">
-                                        <div className="flex gap-2">
-                                            <button onClick={() => onView(inv.id)} className="text-gray-600 dark:text-gray-300 hover:text-blue-600" title="View"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg></button>
-                                            <button onClick={() => onEdit(inv.id)} className="text-gray-600 dark:text-gray-300 hover:text-indigo-600" title="Edit"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002 2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
-                                            <button onClick={() => handleDelete(inv.id)} className="text-gray-600 dark:text-gray-300 hover:text-red-600" title="Delete"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                        <div className="flex gap-4 justify-center">
+                                            <button onClick={() => onView(inv.id)} className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors" title="View"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542 7z" /></svg></button>
+                                            <button onClick={() => onEdit(inv.id)} className="text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors" title="Edit"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002 2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
+                                            <button onClick={() => handleDeleteRequest(inv.id)} className="text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors" title="Delete"><svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1355,12 +1497,20 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
                         </tbody>
                     </table>
                 ) : (
-                    <div className="text-center p-12 text-gray-500 dark:text-gray-400">
+                    <div className="text-center p-12 text-slate-500 dark:text-slate-400">
                         <h3 className="text-xl font-semibold">No invoices found.</h3>
                         <p>Click "New Invoice" to create one.</p>
                     </div>
                 )}
             </div>
+             <ConfirmationModal
+                isOpen={!!deletingId}
+                onClose={() => setDeletingId(null)}
+                onConfirm={confirmDelete}
+                title="Delete Invoice"
+                message="Are you sure you want to delete this invoice? This action cannot be undone."
+                confirmText="Delete"
+            />
         </div>
     );
 };
@@ -1381,17 +1531,17 @@ const TemplateSelector: React.FC<{
                 <div
                     key={template.id}
                     onClick={() => onChange(template.id as any)}
-                    className={`p-4 border-2 rounded-lg cursor-pointer transition ${
-                        selected === template.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                    className={`p-4 border-2 rounded-xl cursor-pointer transition ${
+                        selected === template.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
                     }`}
                 >
                     <div className="flex items-center justify-between">
-                         <h4 className="font-bold text-lg text-gray-800 dark:text-gray-100">{template.name}</h4>
+                         <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100">{template.name}</h4>
                          {selected === template.id && (
                              <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                          )}
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{template.description}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{template.description}</p>
                 </div>
             ))}
         </div>
@@ -1403,14 +1553,28 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
     const { getClients } = useClients();
     const [clients, setClients] = useState<Client[]>([]);
     const [invoice, setInvoice] = useState<Invoice | null>(null);
+    const [isServiceMenuOpen, setIsServiceMenuOpen] = useState(false);
+    const serviceMenuRef = useRef<HTMLDivElement>(null);
+
 
     useEffect(() => {
         setClients(getClients());
+        const getLocalDateString = (date: Date): string => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const today = new Date();
+        const dueDate = new Date();
+        dueDate.setDate(today.getDate() + 14);
+
         const invoiceData = invoiceId ? getInvoiceById(invoiceId) : {
             id: `inv_${Date.now()}`,
             invoiceNumber: `INV-${String(Date.now()).slice(-6)}`,
-            invoiceDate: new Date().toISOString().split('T')[0],
-            dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            invoiceDate: getLocalDateString(today),
+            dueDate: getLocalDateString(dueDate),
             clientId: '',
             clientName: '', clientAddress: '', clientEmail: '',
             propertyLocation: '',
@@ -1429,6 +1593,21 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
         const totalAmount = subtotal + tax;
         setInvoice(inv => inv ? ({ ...inv, subtotal, tax, totalAmount }) : null);
     }, [invoice?.services]);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (serviceMenuRef.current && !serviceMenuRef.current.contains(event.target as Node)) {
+                setIsServiceMenuOpen(false);
+            }
+        };
+        if (isServiceMenuOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [isServiceMenuOpen]);
+
 
     const handleFieldChange = (field: keyof Invoice, value: any) => {
         setInvoice(inv => inv ? ({ ...inv, [field]: value }) : null);
@@ -1480,6 +1659,23 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
         const newItem: InvoiceServiceItem = { id: `svc_${Date.now()}`, description: '', quantity: 1, unitPrice: 0, total: 0 };
         handleFieldChange('services', [...(invoice?.services || []), newItem]);
     };
+
+    const handleAddCustomService = () => {
+        addService();
+        setIsServiceMenuOpen(false);
+    };
+
+    const handleAddPredefinedService = (service: PredefinedService) => {
+        const newItem: InvoiceServiceItem = {
+            id: `svc_${Date.now()}`,
+            description: service.description,
+            quantity: 1,
+            unitPrice: service.unitPrice,
+            total: 1 * service.unitPrice,
+        };
+        handleFieldChange('services', [...(invoice?.services || []), newItem]);
+        setIsServiceMenuOpen(false);
+    };
     
     const removeService = (index: number) => {
         handleFieldChange('services', invoice?.services.filter((_, i) => i !== index));
@@ -1496,34 +1692,33 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
     if (!invoice) return <div className="text-center p-8"><Spinner className="text-blue-600 dark:text-blue-400 mx-auto" /></div>;
 
     const selectedClient = clients.find(c => c.id === invoice.clientId);
-    const inputClasses = "p-2 border rounded-md w-full bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-200";
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-             <div className="bg-white dark:bg-gray-800/50 p-6 rounded-lg shadow-md border dark:border-gray-700">
-                <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-100">Invoice Template</h3>
+             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+                <h3 className="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-100">Invoice Template</h3>
                 <TemplateSelector selected={invoice.template || 'classic'} onChange={(t) => handleFieldChange('template', t)} />
             </div>
 
-             <div className="bg-white dark:bg-gray-800/50 p-6 rounded-lg shadow-md border dark:border-gray-700">
+             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Invoice</h2>
+                    <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Invoice</h2>
                     <input type="text" value={invoice.invoiceNumber} onChange={e => handleFieldChange('invoiceNumber', e.target.value)} className={`${inputClasses} max-w-xs`} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bill To</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bill To</label>
                         <select value={invoice.clientId} onChange={e => handleClientChange(e.target.value)} required className={inputClasses}>
                             <option value="" disabled>Select a client</option>
                             {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
-                        {selectedClient && <div className="text-sm mt-2 text-gray-600 dark:text-gray-400">
+                        {selectedClient && <div className="text-sm mt-2 text-slate-600 dark:text-slate-400">
                             <p>{selectedClient.address}</p>
                             <p>{selectedClient.email}</p>
                         </div>}
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Property</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Property</label>
                         <select 
                             value={invoice.propertyLocation} 
                             onChange={e => {
@@ -1538,18 +1733,18 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                         </select>
                     </div>
                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Invoice Date</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Date</label>
                         <input type="date" value={invoice.invoiceDate} onChange={e => handleFieldChange('invoiceDate', e.target.value)} className={inputClasses} />
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 mb-1">Due Date</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mt-2 mb-1">Due Date</label>
                         <input type="date" value={invoice.dueDate} onChange={e => handleFieldChange('dueDate', e.target.value)} className={inputClasses} />
                     </div>
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-gray-800/50 p-6 rounded-lg shadow-md border dark:border-gray-700">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
                 <div className="overflow-x-auto">
                     <table className="w-full">
-                        <thead className="border-b dark:border-gray-600">
+                        <thead className="border-b dark:border-slate-600">
                             <tr>
                                 <th className="text-left py-2 pr-2">Description</th>
                                 <th className="text-right py-2 px-2 w-24">Qty</th>
@@ -1565,25 +1760,67 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                                     <td><input type="number" value={service.quantity} onChange={e => handleServiceChange(index, 'quantity', parseFloat(e.target.value))} className={`${inputClasses} my-1 text-right`} /></td>
                                     <td><input type="number" value={service.unitPrice} onChange={e => handleServiceChange(index, 'unitPrice', parseFloat(e.target.value))} className={`${inputClasses} my-1 text-right`} /></td>
                                     <td className="text-right font-mono py-2 pl-2">{formatCurrency(service.total)}</td>
-                                    <td className="text-center"><button type="button" onClick={() => removeService(index)} className="text-red-500 hover:text-red-700 text-2xl">&times;</button></td>
+                                    <td className="text-center"><button type="button" onClick={() => removeService(index)} className="text-red-500 hover:text-red-700 text-2xl transition-colors">&times;</button></td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-                <button type="button" onClick={addService} className="mt-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold">+ Add Line Item</button>
+                <div className="relative inline-block text-left mt-2">
+                    <div>
+                        <button
+                            type="button"
+                            onClick={() => setIsServiceMenuOpen(prev => !prev)}
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-600 shadow-sm px-4 py-2 bg-white dark:bg-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-100 dark:focus:ring-offset-slate-800 focus:ring-blue-500"
+                        >
+                            Add Item
+                            <svg className="ml-2 -mr-1 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                        </button>
+                    </div>
+
+                    {isServiceMenuOpen && (
+                        <div
+                            ref={serviceMenuRef}
+                            className="origin-top-left absolute left-0 mt-2 w-72 rounded-lg shadow-lg bg-white dark:bg-slate-800 ring-1 ring-black dark:ring-slate-600 ring-opacity-5 focus:outline-none z-10"
+                        >
+                            <div className="py-1" role="menu" aria-orientation="vertical">
+                                {PREDEFINED_SERVICES.map(service => (
+                                    <button
+                                        type="button"
+                                        key={service.name}
+                                        onClick={() => handleAddPredefinedService(service)}
+                                        className="block w-full text-left px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                        role="menuitem"
+                                    >
+                                       <p className="font-semibold">{service.name}</p>
+                                       <p className="text-xs text-slate-500 dark:text-slate-400">{formatCurrency(service.unitPrice)} - {service.description}</p>
+                                    </button>
+                                ))}
+                                <div className="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddCustomService}
+                                    className="block w-full text-left px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold"
+                                    role="menuitem"
+                                >
+                                    + Add Custom Line Item
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-gray-800/50 p-6 rounded-lg shadow-md border dark:border-gray-700">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
                     <h3 className="font-semibold mb-2">Notes</h3>
                     <textarea value={invoice.notes} onChange={e => handleFieldChange('notes', e.target.value)} rows={4} className={inputClasses} placeholder="Add any notes for the client..."></textarea>
                 </div>
-                <div className="bg-white dark:bg-gray-800/50 p-6 rounded-lg shadow-md border dark:border-gray-700 flex flex-col justify-between">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700 flex flex-col justify-between">
                     <div className="space-y-2 text-right">
                         <div className="flex justify-between items-center"><span className="font-semibold">Subtotal:</span> <span className="font-mono">{formatCurrency(invoice.subtotal)}</span></div>
                         <div className="flex justify-between items-center"><span className="font-semibold">Tax (5%):</span> <span className="font-mono">{formatCurrency(invoice.tax)}</span></div>
-                        <div className="flex justify-between items-center text-xl font-bold border-t pt-2 dark:border-gray-600"><span className="">Total:</span> <span className="font-mono">{formatCurrency(invoice.totalAmount)}</span></div>
+                        <div className="flex justify-between items-center text-xl font-bold border-t pt-2 dark:border-slate-600"><span className="">Total:</span> <span className="font-mono">{formatCurrency(invoice.totalAmount)}</span></div>
                     </div>
                     <div className="space-y-2 mt-4">
                         <div className="flex items-center gap-4">
@@ -1601,7 +1838,7 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                                <input type="number" value={invoice.amountPaid} onChange={e => handleFieldChange('amountPaid', parseFloat(e.target.value))} className={`${inputClasses} text-right`} />
                             </div>
                         }
-                        <div className="flex justify-between items-center text-lg font-semibold bg-gray-100 dark:bg-gray-700 p-2 rounded-md">
+                        <div className="flex justify-between items-center text-lg font-semibold bg-slate-100 dark:bg-slate-700 p-2 rounded-lg">
                             <span>Balance Due:</span>
                             <span className="font-mono">{formatCurrency(invoice.totalAmount - invoice.amountPaid)}</span>
                         </div>
@@ -1610,8 +1847,8 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
             </div>
 
             <div className="flex justify-end gap-4">
-                <button type="button" onClick={onCancel} className="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md">Cancel</button>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Save Invoice</button>
+                <button type="button" onClick={onCancel} className={buttonClasses.secondary}>Cancel</button>
+                <button type="submit" className={buttonClasses.primary}>Save Invoice</button>
             </div>
         </form>
     );
@@ -1621,12 +1858,19 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
     const { getInvoiceById } = useInvoices();
     const [invoice, setInvoice] = useState<Invoice | null>(null);
     const [isExporting, setIsExporting] = useState(false);
+    const [html2canvas, setHtml2canvas] = useState<any>(null);
 
     useEffect(() => {
         setInvoice(getInvoiceById(invoiceId));
+        // Dynamically import html2canvas
+        import('html2canvas').then(module => setHtml2canvas(() => module.default));
     }, [invoiceId]);
     
     const handleExportPDF = async () => {
+        if (!html2canvas) {
+            alert("PDF export library is loading, please try again in a moment.");
+            return;
+        }
         const invoiceElement = document.getElementById('invoice-content');
         if (!invoiceElement || !invoice) return;
         setIsExporting(true);
@@ -1651,7 +1895,7 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
         'Paid': 'bg-green-100 text-green-800 border-green-500 dark:bg-green-900/50 dark:text-green-300',
         'Unpaid': 'bg-red-100 text-red-800 border-red-500 dark:bg-red-900/50 dark:text-red-300',
         'Partial': 'bg-yellow-100 text-yellow-800 border-yellow-500 dark:bg-yellow-900/50 dark:text-yellow-300',
-        'Draft': 'bg-gray-100 text-gray-800 border-gray-500 dark:bg-gray-700 dark:text-gray-300',
+        'Draft': 'bg-slate-100 text-slate-800 border-slate-500 dark:bg-slate-700 dark:text-slate-300',
     };
 
     const templateClass = `invoice-${invoice?.template || 'classic'}`;
@@ -1659,34 +1903,34 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
     return (
         <div className="w-full">
             <div className="flex justify-between items-center mb-6 print:hidden">
-                <button onClick={onBack} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-semibold py-2 px-4 rounded-md">&larr; Back to Invoices</button>
+                <button onClick={onBack} className={buttonClasses.secondary}>&larr; Back to Invoices</button>
                 <div className="flex gap-2">
-                    <button onClick={() => onEdit(invoiceId)} className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md">Edit</button>
-                    <button onClick={handleExportPDF} disabled={isExporting} className="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded-md flex items-center justify-center disabled:bg-orange-400">
+                    <button onClick={() => onEdit(invoiceId)} className={buttonClasses.secondary}>Edit</button>
+                    <button onClick={handleExportPDF} disabled={isExporting || !html2canvas} className={`${buttonClasses.primary} flex items-center gap-2 bg-orange-500 hover:bg-orange-600`}>
                         {isExporting ? <><Spinner /> Exporting...</> : 'Export to PDF'}
                     </button>
                 </div>
             </div>
 
-            <div id="invoice-content" className={`bg-white dark:bg-gray-800 p-8 rounded-lg shadow-lg border dark:border-gray-700 printable-a4 ${templateClass}`}>
-                 <header className="flex justify-between items-start pb-4 mb-8 border-b-2 dark:border-gray-600">
+            <div id="invoice-content" className={`bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border dark:border-slate-700 printable-a4 ${templateClass}`}>
+                 <header className="flex justify-between items-start pb-4 mb-8 border-b-2 dark:border-slate-600">
                     <div>
-                        <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">INVOICE</h1>
-                        <p className="text-lg text-gray-600 dark:text-gray-300">Inspector Pro</p>
+                        <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100">INVOICE</h1>
+                        <p className="text-lg text-slate-600 dark:text-slate-300">WASLA Property Solutions</p>
                     </div>
                     <div className="text-right">
-                        <p><strong className="text-gray-600 dark:text-gray-400">Invoice #:</strong> {invoice.invoiceNumber}</p>
-                        <p><strong className="text-gray-600 dark:text-gray-400">Date:</strong> {formatDate(invoice.invoiceDate)}</p>
-                        <p><strong className="text-gray-600 dark:text-gray-400">Due Date:</strong> {formatDate(invoice.dueDate)}</p>
+                        <p><strong className="text-slate-600 dark:text-slate-400">Invoice #:</strong> {invoice.invoiceNumber}</p>
+                        <p><strong className="text-slate-600 dark:text-slate-400">Date:</strong> {formatDate(invoice.invoiceDate)}</p>
+                        <p><strong className="text-slate-600 dark:text-slate-400">Due Date:</strong> {formatDate(invoice.dueDate)}</p>
                     </div>
                 </header>
                 
                 <div className="grid grid-cols-2 gap-8 mb-8">
                     <div>
-                        <h3 className="font-semibold text-gray-500 dark:text-gray-400 mb-1">BILLED TO</h3>
-                        <p className="font-bold text-lg text-gray-800 dark:text-gray-200">{invoice.clientName}</p>
-                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">{invoice.clientAddress}</p>
-                        <p className="text-gray-700 dark:text-gray-300">{invoice.clientEmail}</p>
+                        <h3 className="font-semibold text-slate-500 dark:text-slate-400 mb-1">BILLED TO</h3>
+                        <p className="font-bold text-lg text-slate-800 dark:text-slate-200">{invoice.clientName}</p>
+                        <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line">{invoice.clientAddress}</p>
+                        <p className="text-slate-700 dark:text-slate-300">{invoice.clientEmail}</p>
                     </div>
                     <div className={`text-center self-center justify-self-end p-4 border-2 rounded-lg ${statusClasses[invoice.status]}`}>
                         <span className="text-2xl font-bold tracking-widest uppercase">{invoice.status}</span>
@@ -1694,15 +1938,15 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                 </div>
 
                 <table className="w-full mb-8">
-                    <thead className="bg-gray-100 dark:bg-gray-700">
+                    <thead className="bg-slate-100 dark:bg-slate-700">
                         <tr>
-                            <th className="p-3 text-left font-bold text-gray-700 dark:text-gray-200">Description</th>
-                            <th className="p-3 text-right font-bold text-gray-700 dark:text-gray-200">Quantity</th>
-                            <th className="p-3 text-right font-bold text-gray-700 dark:text-gray-200">Unit Price</th>
-                            <th className="p-3 text-right font-bold text-gray-700 dark:text-gray-200">Total</th>
+                            <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-200">Description</th>
+                            <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">Quantity</th>
+                            <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">Unit Price</th>
+                            <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">Total</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-600">
                         {invoice.services.map(item => (
                             <tr key={item.id}>
                                 <td className="p-3">{item.description}</td>
@@ -1716,22 +1960,22 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                 
                 <div className="flex justify-end mb-8">
                     <div className="w-full max-w-sm balance-summary">
-                        <div className="flex justify-between py-2"><span className="text-gray-600 dark:text-gray-400">Subtotal:</span> <span className="font-mono">{formatCurrency(invoice.subtotal)}</span></div>
-                        <div className="flex justify-between py-2"><span className="text-gray-600 dark:text-gray-400">Tax (5%):</span> <span className="font-mono">{formatCurrency(invoice.tax)}</span></div>
-                        <div className="flex justify-between py-2 font-bold text-lg border-t-2 dark:border-gray-600"><span className="text-gray-800 dark:text-gray-200">Total:</span> <span className="font-mono text-gray-800 dark:text-gray-200">{formatCurrency(invoice.totalAmount)}</span></div>
-                        <div className="flex justify-between py-2"><span className="text-gray-600 dark:text-gray-400">Amount Paid:</span> <span className="font-mono">{formatCurrency(invoice.amountPaid)}</span></div>
-                        <div className="flex justify-between p-3 mt-2 text-xl font-bold rounded-lg balance-due-box"><span className="text-gray-800 dark:text-gray-200">Balance Due:</span> <span className="font-mono text-gray-800 dark:text-gray-200">{formatCurrency(invoice.totalAmount - invoice.amountPaid)}</span></div>
+                        <div className="flex justify-between py-2"><span className="text-slate-600 dark:text-slate-400">Subtotal:</span> <span className="font-mono">{formatCurrency(invoice.subtotal)}</span></div>
+                        <div className="flex justify-between py-2"><span className="text-slate-600 dark:text-slate-400">Tax (5%):</span> <span className="font-mono">{formatCurrency(invoice.tax)}</span></div>
+                        <div className="flex justify-between py-2 font-bold text-lg border-t-2 dark:border-slate-600"><span className="text-slate-800 dark:text-slate-200">Total:</span> <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(invoice.totalAmount)}</span></div>
+                        <div className="flex justify-between py-2"><span className="text-slate-600 dark:text-slate-400">Amount Paid:</span> <span className="font-mono">{formatCurrency(invoice.amountPaid)}</span></div>
+                        <div className="flex justify-between p-3 mt-2 text-xl font-bold rounded-lg balance-due-box"><span className="text-slate-800 dark:text-slate-200">Balance Due:</span> <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(invoice.totalAmount - invoice.amountPaid)}</span></div>
                     </div>
                 </div>
                 
-                {invoice.notes && <div className="border-t pt-4 dark:border-gray-600">
-                    <h4 className="font-semibold text-gray-500 dark:text-gray-400 mb-1">Notes</h4>
-                    <p className="text-gray-700 dark:text-gray-300">{invoice.notes}</p>
+                {invoice.notes && <div className="border-t pt-4 dark:border-slate-600">
+                    <h4 className="font-semibold text-slate-500 dark:text-slate-400 mb-1">Notes</h4>
+                    <p className="text-slate-700 dark:text-slate-300">{invoice.notes}</p>
                 </div>}
 
-                <footer className="text-center text-xs text-gray-500 dark:text-gray-400 pt-8 mt-8 border-t dark:border-gray-600">
+                <footer className="text-center text-xs text-slate-500 dark:text-slate-400 pt-8 mt-8 border-t dark:border-slate-600">
                     <p>Thank you for your business!</p>
-                    <p>Inspector Pro | inspectpro.example.com | contact@inspectpro.example.com</p>
+                    <p>WASLA Property Solutions | waslaoman.com | info@waslaoman.com</p>
                 </footer>
             </div>
             <style>{`
@@ -1743,7 +1987,10 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                     font-weight: bold;
                 }
                 .invoice-classic header {
-                    border-bottom-width: 2px;
+                    border-bottom-color: #e5e7eb; /* gray-200 */
+                }
+                .dark .invoice-classic header {
+                     border-bottom-color: #4b5563; /* gray-600 */
                 }
                 .invoice-classic table thead {
                     background-color: #f3f4f6; /* gray-100 */
@@ -1769,10 +2016,14 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                     font-weight: 800;
                     letter-spacing: 0.05em;
                 }
+                .dark .invoice-modern header h1 { color: #60a5fa; /* blue-400 */ }
+
                 .invoice-modern table thead {
                     background-color: transparent;
-                    border-bottom: 2px solid #3b82f6; /* blue-500 */
+                    border-bottom: 2px solid #3b82f6;
                 }
+                 .dark .invoice-modern table thead { border-bottom-color: #60a5fa; }
+                
                 .invoice-modern table thead th {
                      color: #3b82f6;
                 }
@@ -1780,14 +2031,16 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                      color: #60a5fa; /* blue-400 */
                 }
                 .invoice-modern .balance-due-box {
-                     background-color: #3b82f6; /* blue-500 */
-                     color: white;
+                     background-color: #3b82f6;
+                }
+                 .invoice-modern .balance-due-box span {
+                    color: white !important;
                 }
                 .dark .invoice-modern .balance-due-box {
-                     background-color: #3b82f6; /* blue-500 */
+                     background-color: #60a5fa;
                 }
                 .dark .invoice-modern .balance-due-box span {
-                    color: white !important;
+                    color: #1e3a8a !important; /* blue-900 */
                 }
 
 
@@ -1815,35 +2068,277 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                 
                 @media print {
                     body { -webkit-print-color-adjust: exact; color-adjust: exact; }
-                    .print\\:hidden { display: none !important; }
-                    html, body {
-                        background-color: #fff !important;
-                        color: #000 !important;
-                    }
-                    #report-content, #invoice-content {
-                        box-shadow: none !important;
-                        border: none !important;
-                        color: #000 !important;
-                        background-color: #fff !important;
-                    }
-                    .dark * {
-                        color: #000 !important;
-                        background-color: transparent !important;
-                        border-color: #ccc !important;
-                    }
-                    .break-inside-avoid { page-break-inside: avoid; }
-                    .break-inside-avoid-page { page-break-inside: avoid; }
-                }
-                .printable-a4 {
-                    width: 210mm;
-                    min-height: 297mm;
-                    padding: 15mm;
-                    margin: 0 auto;
                 }
             `}</style>
         </div>
     );
 };
+
+
+// --- New Settings Page Components ---
+
+const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSettings) => void; }> = ({ settings, onSave }) => {
+    type SettingsTab = 'profile' | 'preferences' | 'security' | 'help';
+    const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+    const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
+    const [showToast, setShowToast] = useState(false);
+
+    useEffect(() => {
+        // If the parent settings change (e.g., from header theme toggle), update local state
+        setLocalSettings(settings);
+    }, [settings]);
+
+    const handleSave = () => {
+        onSave(localSettings);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+    };
+    
+    const handleProfileChange = (field: keyof AppSettings['profile'], value: string) => {
+        setLocalSettings(s => ({ ...s, profile: { ...s.profile, [field]: value } }));
+    };
+
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            try {
+                const base64 = await resizeAndCompressImage(e.target.files[0], 256, 0.8);
+                handleProfileChange('avatar', base64);
+            } catch (error) {
+                console.error("Error uploading avatar:", error);
+                alert("Could not upload image. Please try again.");
+            }
+        }
+    };
+
+    const handlePasswordChange = (e: React.FormEvent) => {
+        e.preventDefault();
+        const form = e.target as HTMLFormElement;
+        const newPassword = (form.elements.namedItem('newPassword') as HTMLInputElement).value;
+        const confirmPassword = (form.elements.namedItem('confirmPassword') as HTMLInputElement).value;
+        if (newPassword !== confirmPassword) {
+            alert("New passwords do not match.");
+            return;
+        }
+        if (newPassword.length < 8) {
+             alert("Password must be at least 8 characters long.");
+             return;
+        }
+        alert("Password changed successfully! (This is a demo)");
+        form.reset();
+    };
+
+    const renderContent = () => {
+        switch (activeTab) {
+            case 'profile':
+                return (
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Profile Information</h3>
+                            <div className="flex items-center gap-6">
+                                <img src={localSettings.profile.avatar} alt="Profile" className="w-24 h-24 rounded-full object-cover ring-4 ring-blue-500/50" />
+                                <div>
+                                    <label htmlFor="avatarUpload" className={`cursor-pointer ${buttonClasses.primary}`}>
+                                        Upload New Picture
+                                    </label>
+                                    <input type="file" id="avatarUpload" className="hidden" accept="image/*" onChange={handleAvatarUpload} />
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">PNG, JPG, GIF up to 10MB.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label className="block text-sm font-medium mb-1">Full Name</label><input type="text" value={localSettings.profile.name} onChange={e => handleProfileChange('name', e.target.value)} className={inputClasses}/></div>
+                            <div><label className="block text-sm font-medium mb-1">Email Address</label><input type="email" value={localSettings.profile.email} onChange={e => handleProfileChange('email', e.target.value)} className={inputClasses}/></div>
+                            <div><label className="block text-sm font-medium mb-1">Phone Number</label><input type="tel" value={localSettings.profile.phone} onChange={e => handleProfileChange('phone', e.target.value)} className={inputClasses}/></div>
+                        </div>
+                         <div>
+                            <h3 className="text-lg font-semibold mb-4 pt-4 border-t dark:border-slate-600">Change Password</h3>
+                            <form onSubmit={handlePasswordChange} className="space-y-4">
+                                <input type="password" name="currentPassword" placeholder="Current Password" required className={inputClasses} />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <input type="password" name="newPassword" placeholder="New Password" required className={inputClasses} />
+                                    <input type="password" name="confirmPassword" placeholder="Confirm New Password" required className={inputClasses} />
+                                </div>
+                                <div className="text-right">
+                                    <button type="submit" className={buttonClasses.primary}>Update Password</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            case 'preferences':
+                 return (
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Theme</h3>
+                             <div className="flex gap-4">
+                                <button onClick={() => setLocalSettings(s => ({...s, theme: 'light'}))} className={`p-4 border-2 rounded-xl w-full text-center transition-colors ${localSettings.theme === 'light' ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'}`}>
+                                     <svg className="h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                                     Light Mode
+                                </button>
+                                <button onClick={() => setLocalSettings(s => ({...s, theme: 'dark'}))} className={`p-4 border-2 rounded-xl w-full text-center transition-colors ${localSettings.theme === 'dark' ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'}`}>
+                                    <svg className="h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                                    Dark Mode
+                                </button>
+                            </div>
+                        </div>
+                         <div>
+                            <h3 className="text-lg font-semibold mb-4">Notifications</h3>
+                            <div className="space-y-2">
+                                <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                                    <span>Email Notifications</span>
+                                    <input type="checkbox" className="toggle" checked={localSettings.notifications.email} onChange={e => setLocalSettings(s => ({...s, notifications: {...s.notifications, email: e.target.checked}}))} />
+                                </label>
+                                <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                                    <span>Push Notifications</span>
+                                    <input type="checkbox" className="toggle" checked={localSettings.notifications.push} onChange={e => setLocalSettings(s => ({...s, notifications: {...s.notifications, push: e.target.checked}}))} />
+                                </label>
+                            </div>
+                        </div>
+                         <div>
+                            <h3 className="text-lg font-semibold mb-4">Language</h3>
+                             <select value={localSettings.language} onChange={e => setLocalSettings(s => ({...s, language: e.target.value as 'en' | 'ar'}))} className={inputClasses}>
+                                <option value="en">English</option>
+                                <option value="ar">العربية (Arabic)</option>
+                            </select>
+                        </div>
+                    </div>
+                );
+            case 'security':
+                return (
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Two-Factor Authentication (2FA)</h3>
+                             <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg flex items-center justify-between">
+                                 <div>
+                                    <p className="font-medium">2FA is currently disabled.</p>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Add an extra layer of security to your account.</p>
+                                </div>
+                                <button className={`${buttonClasses.primary} bg-green-600 hover:bg-green-700`}>Enable</button>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Connected Devices</h3>
+                            <ul className="divide-y dark:divide-slate-600">
+                                {[{icon: "💻", name: "Chrome on Windows 11", ip: "192.168.1.10", current: true}, {icon: "📱", name: "Safari on iPhone 15", ip: "198.51.100.2", current: false}].map(d => (
+                                     <li key={d.name} className="py-3 flex items-center justify-between">
+                                         <div className="flex items-center gap-4">
+                                             <span className="text-2xl">{d.icon}</span>
+                                             <div>
+                                                 <p className="font-medium">{d.name} {d.current && <span className="text-xs text-green-500">(This device)</span>}</p>
+                                                 <p className="text-sm text-slate-500 dark:text-slate-400">IP Address: {d.ip}</p>
+                                             </div>
+                                         </div>
+                                         {!d.current && <button className="text-sm text-red-500 hover:underline">Sign Out</button>}
+                                     </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+                );
+            case 'help':
+                const faqs = [
+                    { q: "How do I create a new inspection?", a: "Navigate to the 'Inspections' tab and click the 'New Inspection' button. Fill out the details and start adding inspection points." },
+                    { q: "Can I export my reports to PDF?", a: "Yes, after viewing a report, you can use the 'Export to PDF' button to generate a downloadable PDF file." },
+                    { q: "How does the AI Summary work?", a: "The AI Summary analyzes all the 'Fail' items in your report and generates a professional, easy-to-read summary of the key issues." }
+                ];
+                return (
+                    <div className="space-y-8">
+                        <div>
+                            <h3 className="text-lg font-semibold mb-4">Frequently Asked Questions</h3>
+                            <div className="space-y-2">
+                                {faqs.map(faq => (
+                                     <details key={faq.q} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg cursor-pointer">
+                                        <summary className="font-semibold">{faq.q}</summary>
+                                        <p className="mt-2 text-slate-600 dark:text-slate-300">{faq.a}</p>
+                                    </details>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                             <h3 className="text-lg font-semibold mb-4">Support</h3>
+                             <button className={`w-full text-left p-3 ${buttonClasses.secondary}`}>Contact Support</button>
+                             <p className="text-center text-sm text-slate-500 dark:text-slate-400 mt-6">App Version: 1.0.0</p>
+                        </div>
+                    </div>
+                );
+        }
+    };
+    
+    const NavItem: React.FC<{ tab: SettingsTab; label: string; icon: React.ReactNode }> = ({ tab, label, icon }) => (
+        <button
+            onClick={() => setActiveTab(tab)}
+            className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition ${
+                activeTab === tab ? 'bg-blue-600 text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+        >
+            {icon}
+            <span className="font-medium">{label}</span>
+        </button>
+    );
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 flex flex-col md:flex-row min-h-[70vh]">
+            <aside className="w-full md:w-1/4 border-b md:border-b-0 md:border-r dark:border-slate-700 p-4">
+                <nav className="space-y-1">
+                    <NavItem tab="profile" label="Profile" icon={<svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>} />
+                    <NavItem tab="preferences" label="Preferences" icon={<svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>} />
+                    <NavItem tab="security" label="Security" icon={<svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>} />
+                    <NavItem tab="help" label="Help & Support" icon={<svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
+                </nav>
+            </aside>
+            <main className="w-full md:w-3/4 p-6 overflow-y-auto">
+                <div className="mb-6">
+                    {renderContent()}
+                </div>
+                 <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-600">
+                    <button type="button" onClick={() => setLocalSettings(settings)} className={buttonClasses.secondary}>Cancel</button>
+                    <button type="button" onClick={handleSave} className={buttonClasses.primary}>Save Changes</button>
+                </div>
+            </main>
+            {showToast && (
+                <div className="fixed bottom-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg animate-bounce">
+                    Settings saved successfully!
+                </div>
+            )}
+            <style>{`
+                .toggle {
+                    -webkit-appearance: none;
+                    appearance: none;
+                    width: 40px;
+                    height: 22px;
+                    display: inline-block;
+                    position: relative;
+                    border-radius: 50px;
+                    overflow: hidden;
+                    outline: none;
+                    border: none;
+                    cursor: pointer;
+                    background-color: #718096;
+                    transition: background-color 0.3s;
+                }
+                .toggle:before {
+                    content: "";
+                    display: block;
+                    position: absolute;
+                    width: 18px;
+                    height: 18px;
+                    background: #fff;
+                    left: 2px;
+                    top: 2px;
+                    border-radius: 50%;
+                    transition: left 0.3s;
+                }
+                .toggle:checked {
+                    background-color: #3b82f6;
+                }
+                .toggle:checked:before {
+                    left: 20px;
+                }
+            `}</style>
+        </div>
+    );
+};
+
 
 // --- Main App Structure ---
 
@@ -1859,27 +2354,56 @@ type InvoiceViewState =
     | { page: 'invoice-form'; id?: string }
     | { page: 'invoice-view'; id: string };
 
+const AppLogo: React.FC<{ inSidebar?: boolean }> = ({ inSidebar = false }) => (
+    <div className={`flex items-center ${inSidebar ? 'space-x-2' : ''}`}>
+        <div className="text-center">
+            <h2 className={`font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-green-500 ${inSidebar ? 'text-xl' : 'text-2xl'}`}>
+                WASLA
+            </h2>
+            <p className={`text-xs font-semibold tracking-wide text-teal-700 dark:text-teal-400 ${inSidebar ? 'hidden sm:block' : ''}`}>
+                Property Solutions
+            </p>
+        </div>
+    </div>
+);
+
 
 const App: React.FC = () => {
     const [activePage, setActivePage] = useState<Page>('dashboard');
     const [inspectionView, setInspectionView] = useState<InspectionViewState>({ page: 'inspections-list' });
     const [invoiceView, setInvoiceView] = useState<InvoiceViewState>({ page: 'invoices-list' });
-
-    const [isDarkMode, setIsDarkMode] = useState(() => {
-        if (localStorage.theme === 'dark') return true;
-        if (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches) return true;
-        return false;
-    });
+    const { getSettings, saveSettings } = useAppSettings();
+    const [settings, setSettings] = useState(getSettings);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
+    
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth <= 768) {
+                setIsSidebarOpen(false);
+            } else {
+                setIsSidebarOpen(true);
+            }
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
-        if (isDarkMode) {
+        saveSettings(settings);
+        if (settings.theme === 'dark') {
             document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
         } else {
             document.documentElement.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
         }
-    }, [isDarkMode]);
+    }, [settings]);
+
+    const handleSaveSettings = (newSettings: AppSettings) => {
+        setSettings(newSettings);
+    };
+
+    const toggleTheme = () => {
+        setSettings(s => ({ ...s, theme: s.theme === 'light' ? 'dark' : 'light' }));
+    };
 
     const navigateToInspectionsList = useCallback(() => setInspectionView({ page: 'inspections-list' }), []);
     const navigateToInspectionReport = useCallback((id: string) => setInspectionView({ page: 'report', id }), []);
@@ -1918,6 +2442,9 @@ const App: React.FC = () => {
         setActivePage(page);
         if (page === 'inspections') setInspectionView({ page: 'inspections-list' });
         if (page === 'invoices') setInvoiceView({ page: 'invoices-list' });
+        if (window.innerWidth <= 768) {
+            setIsSidebarOpen(false);
+        }
     };
 
     const renderPage = () => {
@@ -1927,7 +2454,7 @@ const App: React.FC = () => {
             case 'clients': return <ClientsPage />;
             case 'invoices': return renderInvoicesView();
             case 'reports': return <PlaceholderPage title="Reports" />;
-            case 'settings': return <PlaceholderPage title="Settings" />;
+            case 'settings': return <SettingsPage settings={settings} onSave={handleSaveSettings} />;
             default: return <Dashboard />;
         }
     };
@@ -1945,10 +2472,10 @@ const App: React.FC = () => {
         <a
             href="#"
             onClick={(e) => { e.preventDefault(); handlePageChange(page); }}
-            className={`flex items-center px-4 py-2.5 text-sm font-medium rounded-md transition-colors ${
+            className={`flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                 activePage === page 
-                ? 'bg-blue-600 text-white' 
-                : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300' 
+                : 'text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
             }`}
         >
             {icon}
@@ -1957,42 +2484,48 @@ const App: React.FC = () => {
     );
 
     return (
-        <div className="flex h-screen bg-gray-100 dark:bg-slate-900 text-gray-800 dark:text-slate-300">
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+            {isSidebarOpen && window.innerWidth <= 768 && <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 z-30 md:hidden"></div>}
             {/* Sidebar */}
-            <aside className="w-64 flex-shrink-0 bg-slate-800 dark:bg-slate-800 text-white flex flex-col">
-                 <div className="h-16 flex items-center justify-center px-4 bg-slate-900 dark:bg-slate-900">
-                    <h1 className="text-xl font-bold">Inspector Pro</h1>
+            <aside className={`w-64 flex-shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col fixed inset-y-0 left-0 z-40 md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                 <div className="h-20 flex items-center justify-center px-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+                    <AppLogo inSidebar={true}/>
                 </div>
-                <nav className="flex-1 px-4 py-4 space-y-2">
+                <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
                     <NavLink page="dashboard" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>}>Dashboard</NavLink>
                     <NavLink page="inspections" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>}>Inspections</NavLink>
-                    <NavLink page="clients" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}>Clients</NavLink>
+                    <NavLink page="clients" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}>Clients</NavLink>
                     <NavLink page="invoices" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}>Invoices</NavLink>
                     <NavLink page="reports" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>}>Reports</NavLink>
                     <NavLink page="settings" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}>Settings</NavLink>
                 </nav>
-                <div className="mt-auto p-4 border-t border-slate-700">
-                    <p className="text-xs text-center text-gray-400">&copy; 2024 Inspector Pro. All Rights Reserved.</p>
-                </div>
             </aside>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="bg-white dark:bg-slate-800 shadow-sm z-10">
+            <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${isSidebarOpen ? 'md:ml-0' : 'md:-ml-64'}`}>
+                <header className="sticky top-0 bg-white/75 dark:bg-slate-900/75 backdrop-blur-sm z-20 border-b border-slate-200 dark:border-slate-800">
                     <div className="container mx-auto px-6 py-3 flex justify-between items-center">
-                        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">{pageTitles[activePage]}</h2>
+                        <div className="flex items-center gap-4">
+                             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                             </button>
+                            <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{pageTitles[activePage]}</h2>
+                        </div>
                         <div className="flex items-center space-x-4">
-                            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 ring-1 ring-blue-500">
-                                {isDarkMode ? 
+                            <button onClick={toggleTheme} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                                {settings.theme === 'dark' ? 
                                     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg> :
                                     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
                                 }
                             </button>
-                            <button className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 relative">
+                            <button className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 relative">
                                 <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-800"></span>
                                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
                             </button>
-                             <img className="h-8 w-8 rounded-full object-cover" src="https://i.pravatar.cc/40" alt="User avatar" />
+                            <div className="flex items-center gap-2">
+                                <img className="h-9 w-9 rounded-full object-cover" src={settings.profile.avatar} alt="User avatar" />
+                                <span className="hidden sm:inline font-semibold text-sm">{settings.profile.name}</span>
+                            </div>
                         </div>
                     </div>
                 </header>
