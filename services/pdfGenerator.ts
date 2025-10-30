@@ -1,5 +1,3 @@
-
-
 import jsPDF from 'jspdf';
 import { InspectionData, InspectionArea, InspectionItem, InspectionPhoto } from '../types';
 import { amiriFont } from './amiriFont';
@@ -146,20 +144,30 @@ export class WaslaReportGenerator {
     addSectionHeader(englishTitle: string, arabicTitle: string) {
         this.checkPageBreak(15);
         
-        this.pdf.setFillColor(45, 85, 150);
-        this.pdf.rect(this.margins.left, this.currentY, this.contentWidth, 10, 'F');
+        const headerHeight = 10;
         
+        // Background
+        this.pdf.setFillColor(241, 245, 249); // slate-100
+        this.pdf.rect(this.margins.left, this.currentY, this.contentWidth, headerHeight, 'F');
+        
+        // Accent line
+        this.pdf.setFillColor(37, 99, 235); // blue-600
+        this.pdf.rect(this.margins.left, this.currentY, 1.5, headerHeight, 'F');
+
+        // English Title
         this.pdf.setFontSize(12);
         this.setEnglishFont('bold');
-        this.pdf.setTextColor(255, 255, 255);
-        this.pdf.text(englishTitle.toUpperCase(), this.margins.left + 3, this.currentY + 6.5, { baseline: 'middle' });
+        this.pdf.setTextColor(30, 41, 59); // slate-800
+        this.pdf.text(englishTitle.toUpperCase(), this.margins.left + 5, this.currentY + headerHeight / 2, { baseline: 'middle' });
 
+        // Arabic Title
         this.setArabicFont('bold');
-        this.pdf.text(arabicTitle, this.pageWidth - this.margins.right - 3, this.currentY + 6.5, { align: 'right', lang: 'ar', baseline: 'middle' } as any);
+        this.pdf.text(arabicTitle, this.pageWidth - this.margins.right - 3, this.currentY + headerHeight / 2, { align: 'right', lang: 'ar', baseline: 'middle' } as any);
         
         this.pdf.setTextColor(0, 0, 0);
-        this.currentY += 15;
+        this.currentY += headerHeight + 5;
     }
+
 
     addTwoColumnText(englishText: string, arabicText: string, options: { isBold?: boolean, fontSize?: number } = {}) {
         const { isBold = false, fontSize = 9 } = options;
@@ -243,7 +251,7 @@ export class WaslaReportGenerator {
         this.addSectionHeader('CONFIDENTIALITY OF THE REPORT', 'سرية التقرير');
         this.addTwoColumnText(
             `The inspection report is to be prepared for the Client for the purpose of informing of the major deficiencies in the condition of the subject property and is solely and exclusively for Client’s own information and may not be relied upon by any other person. Client may distribute copies of the inspection report to the seller and the real estate agents directly involved in this transaction, but Client and Inspector do not in any way intend to benefit said seller or the real estate agents directly or indirectly through this Agreement or the inspection report. In the event that the inspection report has been prepared for the SELLER of the subject property, an authorized representative of Wasla Real Estate Solutions will return to the property, for a fee, to meet with the BUYER for a consultation to provide a better understanding of the reported conditions and answer.`,
-            `تم إعداد تقرير الفحص هذا خصيصًا للعميل بغرض إعلامه بالنواقص الجوهرية في حالة العقار محل الفحص، وهو للاستخدام الشخصي فقط ولا يجوز الاعتماد عليه من قبل أي طرف آخر. يجوز للعميل مشاركة نسخة من التقرير مع البائع أو وكلاء العقارات المعنيين بهذه الصفقة، إلا أن كل من العميل والفاحص لا يقصدان من خلال هذا التقرير تحقيق أي منفعة مباشرة أو غير مباشرة لهؤلاء الأطراف. وفي حال تم إعداد هذا التقرير بطلب من البائع، فإن ممثلًا معتمدًا من شركة وصلة لحلول العقار سيعود إلى العقار – مقابل رسوم – لعقد جلسة استشارية مع المشتري بهدف توضيح الملاحظات الواردة في التقرير والإجابة عن استفساراته.`
+            `تم إعداد تقرير الفحص هذا خصيصًا للعميل بغرض إعلامه بالنواقص الجوهرية في حالة العقار محل الفحص، وهو للاستخدام الشخصي فقط ولا يجوز الاعتماد عليه من قبل أي طرف آخر. يجوز للعميل مشاركة نسخة من التقرير مع البائع أو وكلاء العقارات المعنيين بهذه الصفقة، إلا أن كل من العميل والفاحص لا يقصدان من خلال هذا التقرير تحقيق أي منفعة مباشرة أو غير مباشرة لهؤلاء الأطراف. وفي حال تم إعداد هذا التقرير بطلب من البائع، فإن ممثلًا معتمدًا من شركة وصلة لحلول العقار سيعود إلى العقار – مقابل رسوم – لعقد جلسة استشارية עם المشتري بهدف توضيح الملاحظات الواردة في التقرير والإجابة عن استفساراته.`
         );
 
         this.currentY += 5;
@@ -323,9 +331,9 @@ export class WaslaReportGenerator {
         this.checkPageBreak(requiredHeight + 5);
 
         // Draw a background box
-        this.pdf.setFillColor(248, 249, 250); // very light gray
+        this.pdf.setFillColor(248, 252, 254); // blue-50
         this.pdf.roundedRect(this.margins.left, this.currentY, this.contentWidth, requiredHeight, 3, 3, 'F');
-        this.pdf.setDrawColor(220, 220, 220);
+        this.pdf.setDrawColor(191, 219, 254); // blue-200
         this.pdf.roundedRect(this.margins.left, this.currentY, this.contentWidth, requiredHeight, 3, 3, 'S');
 
         this.pdf.text(summaryLines, this.margins.left + 5, this.currentY + 8);
@@ -361,6 +369,7 @@ export class WaslaReportGenerator {
         }
         
         this.pdf.setFontSize(14);
+        this.pdf.setTextColor(37, 99, 235); // blue-600
         const textX = isAreaNameArabic ? this.pageWidth - this.margins.right : this.margins.left;
         this.pdf.text(area.name, textX, this.currentY, {
             align: isAreaNameArabic ? 'right' : 'left',
@@ -368,9 +377,11 @@ export class WaslaReportGenerator {
         } as any);
 
         this.currentY += 6;
-        this.pdf.setDrawColor(200, 200, 200);
+        this.pdf.setDrawColor(59, 130, 246); // blue-500
         this.pdf.line(this.margins.left, this.currentY, this.pageWidth - this.margins.right, this.currentY);
         this.currentY += 8;
+        this.pdf.setTextColor(0, 0, 0);
+
 
         for (const item of area.items) {
             this.addInspectionItem(item);
@@ -380,9 +391,6 @@ export class WaslaReportGenerator {
     addInspectionItem(item: InspectionItem) {
         const itemStartY = this.currentY;
         this.checkPageBreak(30);
-
-        const contentStartX = this.margins.left + 2;
-        const contentWidth = this.contentWidth - 4;
         
         // Calculate status badge size first
         this.setEnglishFont('bold');
@@ -392,7 +400,7 @@ export class WaslaReportGenerator {
         const statusX = this.pageWidth - this.margins.right - statusWidth - 2;
 
         // Draw title
-        const titleAvailableWidth = contentWidth - statusWidth - 5; // 5 for gap
+        const titleAvailableWidth = this.contentWidth - statusWidth - 10; // 5 for gap
         const itemTitle = item.point || 'Inspection Point';
         const isTitleArabic = arabicRegex.test(itemTitle);
         
@@ -404,13 +412,13 @@ export class WaslaReportGenerator {
         this.pdf.setFontSize(11);
         
         const itemTitleLines = this.pdf.splitTextToSize(itemTitle, titleAvailableWidth);
-        const titleX = isTitleArabic ? statusX - 5 : contentStartX;
+        const titleX = isTitleArabic ? statusX - 5 : this.margins.left + 2;
         this.pdf.text(itemTitleLines, titleX, this.currentY + 4, { align: isTitleArabic ? 'right' : 'left', lang: isTitleArabic ? 'ar' : undefined } as any);
 
         // Draw status badge
-        const statusColors = { 'Pass': [34, 139, 34], 'Fail': [220, 20, 60], 'N/A': [108, 122, 137] };
+        const statusColors = { 'Pass': [22, 101, 52], 'Fail': [153, 27, 27], 'N/A': [51, 65, 85] }; // green-800, red-800, slate-800
         const color = statusColors[item.status] || [0, 0, 0];
-        const statusBgColors = { 'Pass': [230, 245, 230], 'Fail': [255, 230, 230], 'N/A': [235, 235, 235] };
+        const statusBgColors = { 'Pass': [220, 252, 231], 'Fail': [254, 226, 226], 'N/A': [226, 232, 240] }; // green-100, red-100, slate-200
         const bgColor = statusBgColors[item.status];
         
         this.pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
@@ -421,66 +429,108 @@ export class WaslaReportGenerator {
         this.pdf.text(statusText, statusX + 4, this.currentY + 4);
         
         this.pdf.setTextColor(0, 0, 0);
-        this.currentY += itemTitleLines.length * 5 + 4;
+        const titleHeight = itemTitleLines.length * 5;
+        this.currentY += titleHeight + 4;
 
-        // Draw details
-        this.setEnglishFont('normal');
-        this.pdf.setFontSize(9);
-        const detailIndent = contentStartX + 4;
-        const detailWidth = contentWidth - 8;
-        
-        if (item.location) {
-            this.checkPageBreak(5);
-            this.setEnglishFont('bold');
-            this.pdf.text('Location:', detailIndent, this.currentY);
+        // Draw details if they exist
+        const hasDetails = item.location || item.comments;
+        // FIX: Hoisted variable declarations to make them available in the redraw section below.
+        const detailIndent = this.margins.left + 4;
+        const detailWidth = this.contentWidth - 8;
+        if(hasDetails) {
+            this.currentY += 2;
+            this.pdf.setDrawColor(226, 232, 240); // slate-200
+            this.pdf.line(this.margins.left + 2, this.currentY, this.pageWidth - this.margins.right - 2, this.currentY);
+            this.currentY += 4;
             
-            const isLocationArabic = arabicRegex.test(item.location);
-            if (isLocationArabic) {
-                this.setArabicFont('normal');
-            } else {
-                this.setEnglishFont('normal');
+            this.setEnglishFont('normal');
+            this.pdf.setFontSize(9);
+            
+            if (item.location) {
+                this.checkPageBreak(5);
+                this.setEnglishFont('bold');
+                this.pdf.text('Location:', detailIndent, this.currentY);
+                
+                const isLocationArabic = arabicRegex.test(item.location);
+                if (isLocationArabic) {
+                    this.setArabicFont('normal');
+                } else {
+                    this.setEnglishFont('normal');
+                }
+                
+                const availableWidth = detailWidth - 18;
+                const locText = this.pdf.splitTextToSize(item.location, availableWidth);
+                const textX = isLocationArabic ? detailIndent + 18 + availableWidth : detailIndent + 18;
+                this.pdf.text(locText, textX, this.currentY, {
+                     align: isLocationArabic ? 'right' : 'left',
+                     lang: isLocationArabic ? 'ar' : undefined,
+                } as any);
+                this.currentY += locText.length * 4;
             }
-
-            const availableWidth = detailWidth - 18;
-            const locText = this.pdf.splitTextToSize(item.location, availableWidth);
-            const textX = isLocationArabic ? detailIndent + 18 + availableWidth : detailIndent + 18;
-            this.pdf.text(locText, textX, this.currentY, {
-                 align: isLocationArabic ? 'right' : 'left',
-                 lang: isLocationArabic ? 'ar' : undefined,
-            } as any);
-            this.currentY += locText.length * 4;
-        }
-        if (item.comments) {
-            this.checkPageBreak(5);
-            this.setEnglishFont('bold');
-            this.pdf.text('Comments:', detailIndent, this.currentY);
-
-            const isCommentsArabic = arabicRegex.test(item.comments);
-            if (isCommentsArabic) {
-                this.setArabicFont('normal');
-            } else {
-                this.setEnglishFont('normal');
+            if (item.comments) {
+                this.checkPageBreak(5);
+                this.setEnglishFont('bold');
+                this.pdf.text('Comments:', detailIndent, this.currentY);
+    
+                const isCommentsArabic = arabicRegex.test(item.comments);
+                if (isCommentsArabic) {
+                    this.setArabicFont('normal');
+                } else {
+                    this.setEnglishFont('normal');
+                }
+    
+                const availableWidth = detailWidth - 20;
+                const comText = this.pdf.splitTextToSize(item.comments, availableWidth);
+                const textX = isCommentsArabic ? detailIndent + 20 + availableWidth : detailIndent + 20;
+                this.pdf.text(comText, textX, this.currentY, {
+                     align: isCommentsArabic ? 'right' : 'left',
+                     lang: isCommentsArabic ? 'ar' : undefined,
+                } as any);
+                this.currentY += comText.length * 4;
             }
-
-            const availableWidth = detailWidth - 20;
-            const comText = this.pdf.splitTextToSize(item.comments, availableWidth);
-            const textX = isCommentsArabic ? detailIndent + 20 + availableWidth : detailIndent + 20;
-            this.pdf.text(comText, textX, this.currentY, {
-                 align: isCommentsArabic ? 'right' : 'left',
-                 lang: isCommentsArabic ? 'ar' : undefined,
-            } as any);
-            this.currentY += comText.length * 4;
         }
+
 
         if (item.photos && item.photos.length > 0) {
-            this.currentY += 2;
+            this.currentY += (hasDetails ? 2 : 4);
             this.addPhotos(item.photos);
         }
         
         // Draw border around the item
         const itemEndY = this.currentY + 2;
-        this.pdf.setDrawColor(220, 220, 220);
-        this.pdf.roundedRect(this.margins.left, itemStartY - 2, this.contentWidth, itemEndY - itemStartY + 2, 3, 3, 'S');
+        this.pdf.setFillColor(248, 250, 252); // slate-50
+        this.pdf.roundedRect(this.margins.left, itemStartY - 2, this.contentWidth, itemEndY - itemStartY + 2, 3, 3, 'F');
+
+        // Re-draw content on top of background
+        this.currentY = itemStartY; // Reset Y to re-draw text
+        this.pdf.text(itemTitleLines, titleX, this.currentY + 4, { align: isTitleArabic ? 'right' : 'left', lang: isTitleArabic ? 'ar' : undefined } as any);
+        this.pdf.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+        this.pdf.roundedRect(statusX, this.currentY, statusWidth, 6, 2, 2, 'F');
+        this.pdf.setTextColor(color[0], color[1], color[2]);
+        this.pdf.text(statusText, statusX + 4, this.currentY + 4);
+        this.pdf.setTextColor(0, 0, 0);
+        this.currentY += titleHeight + 4;
+        if(hasDetails) {
+            this.currentY += 6;
+             if (item.location) {
+                this.setEnglishFont('bold'); this.pdf.text('Location:', detailIndent, this.currentY);
+                if (arabicRegex.test(item.location)) this.setArabicFont('normal'); else this.setEnglishFont('normal');
+                const availableWidth = detailWidth - 18; const locText = this.pdf.splitTextToSize(item.location, availableWidth); const textX = arabicRegex.test(item.location) ? detailIndent + 18 + availableWidth : detailIndent + 18;
+                this.pdf.text(locText, textX, this.currentY, { align: arabicRegex.test(item.location) ? 'right' : 'left', lang: arabicRegex.test(item.location) ? 'ar' : undefined } as any);
+                this.currentY += locText.length * 4;
+            }
+            if (item.comments) {
+                this.setEnglishFont('bold'); this.pdf.text('Comments:', detailIndent, this.currentY);
+                if (arabicRegex.test(item.comments)) this.setArabicFont('normal'); else this.setEnglishFont('normal');
+                const availableWidth = detailWidth - 20; const comText = this.pdf.splitTextToSize(item.comments, availableWidth); const textX = arabicRegex.test(item.comments) ? detailIndent + 20 + availableWidth : detailIndent + 20;
+                this.pdf.text(comText, textX, this.currentY, { align: arabicRegex.test(item.comments) ? 'right' : 'left', lang: arabicRegex.test(item.comments) ? 'ar' : undefined } as any);
+                this.currentY += comText.length * 4;
+            }
+        }
+        if (item.photos && item.photos.length > 0) {
+            this.currentY += (hasDetails ? 2 : 4);
+            this.addPhotos(item.photos);
+        }
 
         this.currentY = itemEndY + 3; // Space after each item
     }

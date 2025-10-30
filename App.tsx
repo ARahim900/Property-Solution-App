@@ -225,9 +225,9 @@ const formatCurrency = (amount: number, currency = 'OMR') => {
 
 // --- UI Components ---
 const buttonClasses = {
-    primary: "bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900 disabled:opacity-50 disabled:bg-blue-400",
-    secondary: "bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900",
-    destructive: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-900",
+    primary: "bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950 disabled:opacity-50 disabled:bg-blue-400",
+    secondary: "bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-slate-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950",
+    destructive: "bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-slate-950",
 };
 
 const inputClasses = "block w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition";
@@ -250,8 +250,8 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: string; chi
     };
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 dark:bg-opacity-80 z-50 flex justify-center items-center p-4" onClick={onClose}>
-            <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-xl p-6 w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto transition-all transform scale-95 opacity-0 animate-scale-in`} onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center border-b dark:border-slate-700 pb-3 mb-4">
+            <div className={`bg-white dark:bg-slate-900 rounded-xl shadow-xl p-6 w-full ${sizeClasses[size]} max-h-[90vh] overflow-y-auto transition-all transform scale-95 opacity-0 animate-scale-in`} onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center border-b dark:border-slate-800 pb-3 mb-4">
                     <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-100">{title}</h3>
                     <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-2xl transition-colors">&times;</button>
                 </div>
@@ -325,7 +325,7 @@ const PhotoUpload: React.FC<{ photos: InspectionPhoto[]; onUpload: (photo: Inspe
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full aspect-square border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:border-blue-500 hover:text-blue-600 transition"
+                    className="w-full aspect-square border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:border-blue-500 hover:text-blue-600 transition"
                     aria-label="Add Photo"
                 >
                     <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4v16m8-8H4"></path></svg>
@@ -346,11 +346,11 @@ const InspectionItemRow: React.FC<{ item: InspectionItem; onUpdate: (updatedItem
     const statusClasses: { [key in InspectionStatus]: string } = {
         'Pass': 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700',
         'Fail': 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/50 dark:text-red-300 dark:border-red-700',
-        'N/A': 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600',
+        'N/A': 'bg-slate-100 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+        <div className="bg-white dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex justify-between items-start">
                 <div>
                     <p className="font-semibold text-slate-800 dark:text-slate-100">{item.point}</p>
@@ -435,7 +435,7 @@ const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedAre
     };
 
     return (
-        <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-xl p-4 shadow-sm mb-6 border dark:border-slate-700">
+        <div className="bg-slate-100/50 dark:bg-slate-900/60 rounded-xl p-4 shadow-sm mb-6 border dark:border-slate-800">
             <div className="flex justify-between items-center mb-4">
                 <input
                     type="text"
@@ -456,7 +456,7 @@ const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedAre
             </button>
 
             <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add Inspection Point">
-                <div className="p-4 mb-4 border rounded-lg bg-slate-50 dark:bg-slate-700/50 dark:border-slate-600">
+                <div className="p-4 mb-4 border rounded-lg bg-slate-50 dark:bg-slate-800/50 dark:border-slate-700">
                     <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2">Add Custom Point</h4>
                     <div className="space-y-2">
                         <input type="text" value={customPoint} onChange={(e) => setCustomPoint(e.target.value)} placeholder="e.g., Check for window seal drafts" className={inputClasses} />
@@ -465,19 +465,19 @@ const InspectionAreaCard: React.FC<{ area: InspectionArea; onUpdate: (updatedAre
                     </div>
                 </div>
 
-                <div className="border-t dark:border-slate-600 pt-4">
+                <div className="border-t dark:border-slate-700 pt-4">
                     <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2">Or Select a Predefined Point</h4>
                     <div className="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
                         {Object.entries(INSPECTION_CATEGORIES).map(([category, points]) => (
                             <div key={category}>
-                                <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2 border-b dark:border-slate-600 pb-1">{category}</h4>
+                                <h4 className="font-semibold text-lg text-slate-700 dark:text-slate-300 mb-2 border-b dark:border-slate-700 pb-1">{category}</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                                     {points.map(point => (
                                         <button
                                             type="button"
                                             key={point}
                                             onClick={() => { handleAddItem(category, point); setIsModalOpen(false); }}
-                                            className="text-left p-2 bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-sm transition text-slate-800 dark:text-slate-300"
+                                            className="text-left p-2 bg-slate-100 dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-sm transition text-slate-800 dark:text-slate-300"
                                         >
                                             {point}
                                         </button>
@@ -554,7 +554,7 @@ const InspectionForm: React.FC<{ inspectionId?: string; onSave: () => void; onCa
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border dark:border-slate-800">
                 <h2 className="text-2xl font-bold mb-4 text-slate-800 dark:text-slate-100">Inspection Details</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="text" placeholder="Client Name" value={inspection.clientName} onChange={e => handleUpdateField('clientName', e.target.value)} required className={inputClasses} />
@@ -781,7 +781,7 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
     const statusBadgeClasses: { [key in InspectionStatus]: string } = {
         'Pass': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
         'Fail': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
-        'N/A': 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-300',
+        'N/A': 'bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
     };
     
     return (
@@ -798,8 +798,8 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
 
             <div id="full-report-container">
                 <ReportTemplate inspection={inspection} />
-                <div id="report-content" className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border dark:border-slate-700 printable-a4">
-                     <header className="flex justify-between items-start border-b-2 border-slate-200 dark:border-slate-700 pb-4 mb-6">
+                <div id="report-content" className="bg-white dark:bg-slate-900 p-8 rounded-xl shadow-lg border dark:border-slate-800 printable-a4">
+                     <header className="flex justify-between items-start border-b-2 border-slate-200 dark:border-slate-800 pb-4 mb-6">
                         <div className="flex-shrink-0">
                            <WaslaLogo />
                         </div>
@@ -809,7 +809,7 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                         </div>
                     </header>
                     
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mb-8 text-sm p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 mb-8 text-sm p-4 bg-slate-50 dark:bg-slate-800/30 rounded-lg">
                         <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Client:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{inspection.clientName}</span></div>
                         <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Inspector:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{inspection.inspectorName}</span></div>
                         <div className="flex justify-between"><strong className="text-slate-500 dark:text-slate-400">Date:</strong> <span className="text-slate-800 dark:text-slate-200 font-medium">{formatDate(inspection.inspectionDate)}</span></div>
@@ -833,19 +833,19 @@ const InspectionReport: React.FC<{ inspectionId: string; onBack: () => void, onE
                             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 pb-2 mb-4 border-b-2 border-blue-500">{area.name}</h3>
                             <div className="space-y-4">
                                {area.items.length > 0 ? area.items.map(item => (
-                                   <div key={item.id} className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 break-inside-avoid-page bg-white dark:bg-slate-800/50 shadow-sm">
+                                   <div key={item.id} className="p-4 rounded-lg border border-slate-200 dark:border-slate-800 break-inside-avoid-page bg-white dark:bg-slate-900/50 shadow-sm">
                                         <div className="flex justify-between items-start">
                                             <h4 className="font-bold text-lg text-slate-800 dark:text-slate-100 flex-1 pr-4">{item.point}</h4>
                                             <span className={`px-3 py-1 text-sm font-semibold rounded-full ${statusBadgeClasses[item.status]} flex-shrink-0`}>{item.status}</span>
                                         </div>
                                         {(item.location || item.comments) && (
-                                            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                                            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
                                                 {item.location && <p className="text-sm text-slate-600 dark:text-slate-300"><strong className="font-semibold text-slate-700 dark:text-slate-200">Location:</strong> {item.location}</p>}
                                                 {item.comments && <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap"><strong className="font-semibold text-slate-700 dark:text-slate-200">Comments:</strong> {item.comments}</p>}
                                             </div>
                                         )}
                                        {item.photos.length > 0 && (
-                                           <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                                           <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                                                {item.photos.map((photo, index) => (
                                                    <a key={index} href={`data:image/jpeg;base64,${photo.base64}`} target="_blank" rel="noopener noreferrer" className="group">
                                                         <img src={`data:image/jpeg;base64,${photo.base64}`} alt={`${item.point} photo ${index+1}`} className="rounded-lg w-full aspect-square object-cover group-hover:opacity-80 transition-opacity"/>
@@ -955,11 +955,11 @@ const InspectionsDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id
                 </button>
             </div>
             
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800">
                 {filteredInspections.length > 0 ? (
-                    <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+                    <ul className="divide-y divide-slate-200 dark:divide-slate-800">
                         {filteredInspections.map(insp => (
-                            <li key={insp.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                            <li key={insp.id} className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                 <div>
                                     <h3 className="font-semibold text-lg text-blue-700 dark:text-blue-400">{insp.propertyLocation}</h3>
                                     <p className="text-slate-600 dark:text-slate-300">Client: {insp.clientName}</p>
@@ -994,7 +994,7 @@ const InspectionsDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id
 
 const PlaceholderPage: React.FC<{title: string}> = ({title}) => (
     <div className="flex items-center justify-center h-full">
-        <div className="text-center p-12 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
+        <div className="text-center p-12 text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800">
             <h3 className="text-2xl font-semibold">{title}</h3>
             <p>This section is under construction. Check back soon!</p>
         </div>
@@ -1005,7 +1005,7 @@ const PlaceholderPage: React.FC<{title: string}> = ({title}) => (
 const StatCard: React.FC<{ title: string; value: string; change: string; changeType: 'increase' | 'decrease', icon: React.ReactNode, color: string }> = ({ title, value, change, changeType, icon, color }) => {
     const isIncrease = changeType === 'increase';
     return (
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-5">
+        <div className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center gap-5">
             <div className={`flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-full ${color}`}>
                 {icon}
             </div>
@@ -1125,7 +1125,7 @@ const Dashboard: React.FC = () => {
         datasets: [{
             data: dashboardData.pieChartDataPoints,
             backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#6b7280'], // emerald, red, amber, slate
-            borderColor: isDarkMode ? '#1e293b' : '#ffffff', // slate-800 for dark
+            borderColor: isDarkMode ? '#0f172a' : '#ffffff', // slate-900 for dark
             borderWidth: 4,
         }],
     };
@@ -1199,13 +1199,13 @@ const Dashboard: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                <div className="lg:col-span-3 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className="lg:col-span-3 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Revenue Overview</h3>
                     <div className="h-72">
                         <Bar options={chartOptions('Revenue Overview')} data={barChartData} />
                     </div>
                 </div>
-                <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Invoice Status</h3>
                      <div className="h-72">
                         <Pie data={pieChartData} options={pieOptions} />
@@ -1257,11 +1257,11 @@ const ClientFormModal: React.FC<{ client?: Client; onClose: () => void; onSave: 
                 </div>
                 <textarea name="address" value={formData.address} onChange={handleChange} placeholder="Client Address" rows={3} className={inputClasses}></textarea>
                 
-                <div className="border-t dark:border-slate-600 pt-4">
+                <div className="border-t dark:border-slate-700 pt-4">
                     <h4 className="font-semibold mb-2 text-slate-800 dark:text-slate-200">Properties</h4>
                     <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                         {formData.properties.map((prop, index) => (
-                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg">
+                            <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center bg-slate-50 dark:bg-slate-800/50 p-2 rounded-lg">
                                 <input name="location" value={prop.location} onChange={(e) => handlePropertyChange(index, e)} placeholder="Location" required className={`${inputClasses} md:col-span-2`} />
                                 <input name="size" type="number" value={prop.size} onChange={(e) => handlePropertyChange(index, e)} placeholder="Size (sqm)" required className={inputClasses} />
                                 <div className="flex items-center gap-2">
@@ -1342,11 +1342,11 @@ const ClientsPage: React.FC<{}> = ({}) => {
 
             {isModalOpen && <ClientFormModal client={editingClient || undefined} onClose={() => setIsModalOpen(false)} onSave={handleSave} />}
 
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800">
                 {filteredClients.length > 0 ? (
-                    <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+                    <ul className="divide-y divide-slate-200 dark:divide-slate-800">
                         {filteredClients.map(client => (
-                            <li key={client.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                            <li key={client.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <h3 className="font-semibold text-lg text-blue-700 dark:text-blue-400">{client.name}</h3>
@@ -1369,11 +1369,11 @@ const ClientsPage: React.FC<{}> = ({}) => {
                                     </div>
                                 </div>
                                 {client.properties.length > 0 &&
-                                    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700">
+                                    <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800">
                                         <h4 className="text-sm font-semibold text-slate-500 dark:text-slate-400 mb-2">Properties</h4>
                                         <div className="flex flex-wrap gap-2">
                                             {client.properties.map(p => (
-                                                <div key={p.id} className="bg-slate-100 dark:bg-slate-700 rounded-full px-3 py-1 text-xs flex items-center gap-2">
+                                                <div key={p.id} className="bg-slate-100 dark:bg-slate-800 rounded-full px-3 py-1 text-xs flex items-center gap-2">
                                                     <span className={`font-bold ${p.type === 'Residential' ? 'text-green-600 dark:text-green-400' : 'text-purple-600 dark:text-purple-400'}`}>{p.type}</span>
                                                     <span className="text-slate-700 dark:text-slate-300">{p.location}</span>
                                                     <span className="text-slate-500 dark:text-slate-400">({p.size} sqm)</span>
@@ -1441,7 +1441,7 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
         'Paid': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
         'Unpaid': 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
         'Partial': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300',
-        'Draft': 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-300',
+        'Draft': 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
     };
 
     return (
@@ -1462,10 +1462,10 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
                 </button>
             </div>
             
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-x-auto">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 overflow-x-auto">
                 {filteredInvoices.length > 0 ? (
                     <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
-                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-400">
+                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-800 dark:text-slate-400">
                             <tr>
                                 <th scope="col" className="p-4 font-semibold">Invoice #</th>
                                 <th scope="col" className="p-4 font-semibold">Client</th>
@@ -1478,7 +1478,7 @@ const InvoicesDashboard: React.FC<{ onView: (id: string) => void; onEdit: (id: s
                         </thead>
                         <tbody>
                             {filteredInvoices.map(inv => (
-                                <tr key={inv.id} className="bg-white border-b dark:bg-slate-800 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600/50">
+                                <tr key={inv.id} className="bg-white border-b dark:bg-slate-900 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                                     <td className="p-4 font-medium text-blue-600 dark:text-blue-400">{inv.invoiceNumber}</td>
                                     <td className="p-4 text-slate-900 dark:text-slate-200">{inv.clientName}</td>
                                     <td className="p-4">{formatDate(inv.invoiceDate)}</td>
@@ -1532,7 +1532,7 @@ const TemplateSelector: React.FC<{
                     key={template.id}
                     onClick={() => onChange(template.id as any)}
                     className={`p-4 border-2 rounded-xl cursor-pointer transition ${
-                        selected === template.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'
+                        selected === template.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-slate-300 dark:border-slate-700 hover:border-blue-400'
                     }`}
                 >
                     <div className="flex items-center justify-between">
@@ -1695,12 +1695,12 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
-             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border dark:border-slate-800">
                 <h3 className="text-xl font-semibold mb-4 text-slate-800 dark:text-slate-100">Invoice Template</h3>
                 <TemplateSelector selected={invoice.template || 'classic'} onChange={(t) => handleFieldChange('template', t)} />
             </div>
 
-             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+             <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border dark:border-slate-800">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Invoice</h2>
                     <input type="text" value={invoice.invoiceNumber} onChange={e => handleFieldChange('invoiceNumber', e.target.value)} className={`${inputClasses} max-w-xs`} />
@@ -1741,10 +1741,10 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border dark:border-slate-800">
                 <div className="overflow-x-auto">
                     <table className="w-full">
-                        <thead className="border-b dark:border-slate-600">
+                        <thead className="border-b dark:border-slate-700">
                             <tr>
                                 <th className="text-left py-2 pr-2">Description</th>
                                 <th className="text-right py-2 px-2 w-24">Qty</th>
@@ -1771,7 +1771,7 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                         <button
                             type="button"
                             onClick={() => setIsServiceMenuOpen(prev => !prev)}
-                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-600 shadow-sm px-4 py-2 bg-white dark:bg-slate-700 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-100 dark:focus:ring-offset-slate-800 focus:ring-blue-500"
+                            className="inline-flex items-center justify-center rounded-lg border border-slate-300 dark:border-slate-700 shadow-sm px-4 py-2 bg-white dark:bg-slate-800 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-100 dark:focus:ring-offset-slate-900 focus:ring-blue-500"
                         >
                             Add Item
                             <svg className="ml-2 -mr-1 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -1781,7 +1781,7 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                     {isServiceMenuOpen && (
                         <div
                             ref={serviceMenuRef}
-                            className="origin-top-left absolute left-0 mt-2 w-72 rounded-lg shadow-lg bg-white dark:bg-slate-800 ring-1 ring-black dark:ring-slate-600 ring-opacity-5 focus:outline-none z-10"
+                            className="origin-top-left absolute left-0 mt-2 w-72 rounded-lg shadow-lg bg-white dark:bg-slate-900 ring-1 ring-black dark:ring-slate-700 ring-opacity-5 focus:outline-none z-10"
                         >
                             <div className="py-1" role="menu" aria-orientation="vertical">
                                 {PREDEFINED_SERVICES.map(service => (
@@ -1789,18 +1789,18 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                                         type="button"
                                         key={service.name}
                                         onClick={() => handleAddPredefinedService(service)}
-                                        className="block w-full text-left px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                        className="block w-full text-left px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                                         role="menuitem"
                                     >
                                        <p className="font-semibold">{service.name}</p>
                                        <p className="text-xs text-slate-500 dark:text-slate-400">{formatCurrency(service.unitPrice)} - {service.description}</p>
                                     </button>
                                 ))}
-                                <div className="border-t border-slate-200 dark:border-slate-600 my-1"></div>
+                                <div className="border-t border-slate-200 dark:border-slate-700 my-1"></div>
                                 <button
                                     type="button"
                                     onClick={handleAddCustomService}
-                                    className="block w-full text-left px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold"
+                                    className="block w-full text-left px-4 py-2 text-sm text-slate-800 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold"
                                     role="menuitem"
                                 >
                                     + Add Custom Line Item
@@ -1812,15 +1812,15 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
             </div>
 
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border dark:border-slate-800">
                     <h3 className="font-semibold mb-2">Notes</h3>
                     <textarea value={invoice.notes} onChange={e => handleFieldChange('notes', e.target.value)} rows={4} className={inputClasses} placeholder="Add any notes for the client..."></textarea>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border dark:border-slate-700 flex flex-col justify-between">
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border dark:border-slate-800 flex flex-col justify-between">
                     <div className="space-y-2 text-right">
                         <div className="flex justify-between items-center"><span className="font-semibold">Subtotal:</span> <span className="font-mono">{formatCurrency(invoice.subtotal)}</span></div>
                         <div className="flex justify-between items-center"><span className="font-semibold">Tax (5%):</span> <span className="font-mono">{formatCurrency(invoice.tax)}</span></div>
-                        <div className="flex justify-between items-center text-xl font-bold border-t pt-2 dark:border-slate-600"><span className="">Total:</span> <span className="font-mono">{formatCurrency(invoice.totalAmount)}</span></div>
+                        <div className="flex justify-between items-center text-xl font-bold border-t pt-2 dark:border-slate-700"><span className="">Total:</span> <span className="font-mono">{formatCurrency(invoice.totalAmount)}</span></div>
                     </div>
                     <div className="space-y-2 mt-4">
                         <div className="flex items-center gap-4">
@@ -1838,7 +1838,7 @@ const InvoiceForm: React.FC<{ invoiceId?: string; onSave: () => void; onCancel: 
                                <input type="number" value={invoice.amountPaid} onChange={e => handleFieldChange('amountPaid', parseFloat(e.target.value))} className={`${inputClasses} text-right`} />
                             </div>
                         }
-                        <div className="flex justify-between items-center text-lg font-semibold bg-slate-100 dark:bg-slate-700 p-2 rounded-lg">
+                        <div className="flex justify-between items-center text-lg font-semibold bg-slate-100 dark:bg-slate-800 p-2 rounded-lg">
                             <span>Balance Due:</span>
                             <span className="font-mono">{formatCurrency(invoice.totalAmount - invoice.amountPaid)}</span>
                         </div>
@@ -1895,7 +1895,7 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
         'Paid': 'bg-green-100 text-green-800 border-green-500 dark:bg-green-900/50 dark:text-green-300',
         'Unpaid': 'bg-red-100 text-red-800 border-red-500 dark:bg-red-900/50 dark:text-red-300',
         'Partial': 'bg-yellow-100 text-yellow-800 border-yellow-500 dark:bg-yellow-900/50 dark:text-yellow-300',
-        'Draft': 'bg-slate-100 text-slate-800 border-slate-500 dark:bg-slate-700 dark:text-slate-300',
+        'Draft': 'bg-slate-100 text-slate-800 border-slate-500 dark:bg-slate-800 dark:text-slate-300',
     };
 
     const templateClass = `invoice-${invoice?.template || 'classic'}`;
@@ -1912,8 +1912,8 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                 </div>
             </div>
 
-            <div id="invoice-content" className={`bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border dark:border-slate-700 printable-a4 ${templateClass}`}>
-                 <header className="flex justify-between items-start pb-4 mb-8 border-b-2 dark:border-slate-600">
+            <div id="invoice-content" className={`bg-white dark:bg-slate-900 p-8 rounded-xl shadow-lg border dark:border-slate-800 printable-a4 ${templateClass}`}>
+                 <header className="flex justify-between items-start pb-4 mb-8 border-b-2 dark:border-slate-700">
                     <div>
                         <h1 className="text-4xl font-bold text-slate-800 dark:text-slate-100">INVOICE</h1>
                         <p className="text-lg text-slate-600 dark:text-slate-300">WASLA Property Solutions</p>
@@ -1938,7 +1938,7 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                 </div>
 
                 <table className="w-full mb-8">
-                    <thead className="bg-slate-100 dark:bg-slate-700">
+                    <thead className="bg-slate-100 dark:bg-slate-800">
                         <tr>
                             <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-200">Description</th>
                             <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">Quantity</th>
@@ -1946,7 +1946,7 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                             <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">Total</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-600">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                         {invoice.services.map(item => (
                             <tr key={item.id}>
                                 <td className="p-3">{item.description}</td>
@@ -1962,18 +1962,18 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                     <div className="w-full max-w-sm balance-summary">
                         <div className="flex justify-between py-2"><span className="text-slate-600 dark:text-slate-400">Subtotal:</span> <span className="font-mono">{formatCurrency(invoice.subtotal)}</span></div>
                         <div className="flex justify-between py-2"><span className="text-slate-600 dark:text-slate-400">Tax (5%):</span> <span className="font-mono">{formatCurrency(invoice.tax)}</span></div>
-                        <div className="flex justify-between py-2 font-bold text-lg border-t-2 dark:border-slate-600"><span className="text-slate-800 dark:text-slate-200">Total:</span> <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(invoice.totalAmount)}</span></div>
+                        <div className="flex justify-between py-2 font-bold text-lg border-t-2 dark:border-slate-700"><span className="text-slate-800 dark:text-slate-200">Total:</span> <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(invoice.totalAmount)}</span></div>
                         <div className="flex justify-between py-2"><span className="text-slate-600 dark:text-slate-400">Amount Paid:</span> <span className="font-mono">{formatCurrency(invoice.amountPaid)}</span></div>
                         <div className="flex justify-between p-3 mt-2 text-xl font-bold rounded-lg balance-due-box"><span className="text-slate-800 dark:text-slate-200">Balance Due:</span> <span className="font-mono text-slate-800 dark:text-slate-200">{formatCurrency(invoice.totalAmount - invoice.amountPaid)}</span></div>
                     </div>
                 </div>
                 
-                {invoice.notes && <div className="border-t pt-4 dark:border-slate-600">
+                {invoice.notes && <div className="border-t pt-4 dark:border-slate-700">
                     <h4 className="font-semibold text-slate-500 dark:text-slate-400 mb-1">Notes</h4>
                     <p className="text-slate-700 dark:text-slate-300">{invoice.notes}</p>
                 </div>}
 
-                <footer className="text-center text-xs text-slate-500 dark:text-slate-400 pt-8 mt-8 border-t dark:border-slate-600">
+                <footer className="text-center text-xs text-slate-500 dark:text-slate-400 pt-8 mt-8 border-t dark:border-slate-700">
                     <p>Thank you for your business!</p>
                     <p>WASLA Property Solutions | waslaoman.com | info@waslaoman.com</p>
                 </footer>
@@ -1990,21 +1990,21 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                     border-bottom-color: #e5e7eb; /* gray-200 */
                 }
                 .dark .invoice-classic header {
-                     border-bottom-color: #4b5563; /* gray-600 */
+                     border-bottom-color: #334155; /* slate-700 */
                 }
                 .invoice-classic table thead {
                     background-color: #f3f4f6; /* gray-100 */
                 }
                 .dark .invoice-classic table thead {
-                    background-color: #374151; /* gray-700 */
+                    background-color: #1e293b; /* slate-800 */
                 }
                 .invoice-classic .balance-due-box {
                      background-color: #f3f4f6; /* gray-100 */
                      border: 1px solid #e5e7eb; /* gray-200 */
                 }
                  .dark .invoice-classic .balance-due-box {
-                     background-color: #374151; /* gray-700 */
-                     border-color: #4b5563; /* gray-600 */
+                     background-color: #1e293b; /* slate-800 */
+                     border-color: #334155; /* slate-700 */
                 }
 
                 /* --- Modern Template --- */
@@ -2063,7 +2063,7 @@ const InvoiceViewer: React.FC<{ invoiceId: string; onBack: () => void; onEdit: (
                     background-color: #f3f4f6; /* gray-100 */
                 }
                 .dark .invoice-compact .balance-due-box {
-                    background-color: #374151; /* gray-700 */
+                    background-color: #1e293b; /* slate-800 */
                 }
                 
                 @media print {
@@ -2151,7 +2151,7 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                             <div><label className="block text-sm font-medium mb-1">Phone Number</label><input type="tel" value={localSettings.profile.phone} onChange={e => handleProfileChange('phone', e.target.value)} className={inputClasses}/></div>
                         </div>
                          <div>
-                            <h3 className="text-lg font-semibold mb-4 pt-4 border-t dark:border-slate-600">Change Password</h3>
+                            <h3 className="text-lg font-semibold mb-4 pt-4 border-t dark:border-slate-700">Change Password</h3>
                             <form onSubmit={handlePasswordChange} className="space-y-4">
                                 <input type="password" name="currentPassword" placeholder="Current Password" required className={inputClasses} />
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2171,11 +2171,11 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                         <div>
                             <h3 className="text-lg font-semibold mb-4">Theme</h3>
                              <div className="flex gap-4">
-                                <button onClick={() => setLocalSettings(s => ({...s, theme: 'light'}))} className={`p-4 border-2 rounded-xl w-full text-center transition-colors ${localSettings.theme === 'light' ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'}`}>
+                                <button onClick={() => setLocalSettings(s => ({...s, theme: 'light'}))} className={`p-4 border-2 rounded-xl w-full text-center transition-colors ${localSettings.theme === 'light' ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-slate-300 dark:border-slate-700 hover:border-blue-400'}`}>
                                      <svg className="h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                                      Light Mode
                                 </button>
-                                <button onClick={() => setLocalSettings(s => ({...s, theme: 'dark'}))} className={`p-4 border-2 rounded-xl w-full text-center transition-colors ${localSettings.theme === 'dark' ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-slate-300 dark:border-slate-600 hover:border-blue-400'}`}>
+                                <button onClick={() => setLocalSettings(s => ({...s, theme: 'dark'}))} className={`p-4 border-2 rounded-xl w-full text-center transition-colors ${localSettings.theme === 'dark' ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10' : 'border-slate-300 dark:border-slate-700 hover:border-blue-400'}`}>
                                     <svg className="h-8 w-8 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
                                     Dark Mode
                                 </button>
@@ -2184,11 +2184,11 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                          <div>
                             <h3 className="text-lg font-semibold mb-4">Notifications</h3>
                             <div className="space-y-2">
-                                <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                                <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                     <span>Email Notifications</span>
                                     <input type="checkbox" className="toggle" checked={localSettings.notifications.email} onChange={e => setLocalSettings(s => ({...s, notifications: {...s.notifications, email: e.target.checked}}))} />
                                 </label>
-                                <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                                <label className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                                     <span>Push Notifications</span>
                                     <input type="checkbox" className="toggle" checked={localSettings.notifications.push} onChange={e => setLocalSettings(s => ({...s, notifications: {...s.notifications, push: e.target.checked}}))} />
                                 </label>
@@ -2208,7 +2208,7 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                     <div className="space-y-8">
                         <div>
                             <h3 className="text-lg font-semibold mb-4">Two-Factor Authentication (2FA)</h3>
-                             <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg flex items-center justify-between">
+                             <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-center justify-between">
                                  <div>
                                     <p className="font-medium">2FA is currently disabled.</p>
                                     <p className="text-sm text-slate-500 dark:text-slate-400">Add an extra layer of security to your account.</p>
@@ -2218,7 +2218,7 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                         </div>
                         <div>
                             <h3 className="text-lg font-semibold mb-4">Connected Devices</h3>
-                            <ul className="divide-y dark:divide-slate-600">
+                            <ul className="divide-y dark:divide-slate-700">
                                 {[{icon: "💻", name: "Chrome on Windows 11", ip: "192.168.1.10", current: true}, {icon: "📱", name: "Safari on iPhone 15", ip: "198.51.100.2", current: false}].map(d => (
                                      <li key={d.name} className="py-3 flex items-center justify-between">
                                          <div className="flex items-center gap-4">
@@ -2247,7 +2247,7 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                             <h3 className="text-lg font-semibold mb-4">Frequently Asked Questions</h3>
                             <div className="space-y-2">
                                 {faqs.map(faq => (
-                                     <details key={faq.q} className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg cursor-pointer">
+                                     <details key={faq.q} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg cursor-pointer">
                                         <summary className="font-semibold">{faq.q}</summary>
                                         <p className="mt-2 text-slate-600 dark:text-slate-300">{faq.a}</p>
                                     </details>
@@ -2268,7 +2268,7 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
         <button
             onClick={() => setActiveTab(tab)}
             className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition ${
-                activeTab === tab ? 'bg-blue-600 text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                activeTab === tab ? 'bg-blue-600 text-white' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
         >
             {icon}
@@ -2277,8 +2277,8 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
     );
 
     return (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 flex flex-col md:flex-row min-h-[70vh]">
-            <aside className="w-full md:w-1/4 border-b md:border-b-0 md:border-r dark:border-slate-700 p-4">
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border dark:border-slate-800 flex flex-col md:flex-row min-h-[70vh]">
+            <aside className="w-full md:w-1/4 border-b md:border-b-0 md:border-r dark:border-slate-800 p-4">
                 <nav className="space-y-1">
                     <NavItem tab="profile" label="Profile" icon={<svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>} />
                     <NavItem tab="preferences" label="Preferences" icon={<svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>} />
@@ -2290,7 +2290,7 @@ const SettingsPage: React.FC<{ settings: AppSettings; onSave: (settings: AppSett
                 <div className="mb-6">
                     {renderContent()}
                 </div>
-                 <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-600">
+                 <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700">
                     <button type="button" onClick={() => setLocalSettings(settings)} className={buttonClasses.secondary}>Cancel</button>
                     <button type="button" onClick={handleSave} className={buttonClasses.primary}>Save Changes</button>
                 </div>
@@ -2475,7 +2475,7 @@ const App: React.FC = () => {
             className={`flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
                 activePage === page 
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300' 
-                : 'text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                : 'text-slate-700 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
         >
             {icon}
@@ -2484,11 +2484,11 @@ const App: React.FC = () => {
     );
 
     return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200">
             {isSidebarOpen && window.innerWidth <= 768 && <div onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 bg-black/50 z-30 md:hidden"></div>}
             {/* Sidebar */}
-            <aside className={`w-64 flex-shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col fixed inset-y-0 left-0 z-40 md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                 <div className="h-20 flex items-center justify-center px-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+            <aside className={`w-64 flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col fixed inset-y-0 left-0 z-40 md:relative md:translate-x-0 transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                 <div className="h-20 flex items-center justify-center px-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
                     <AppLogo inSidebar={true}/>
                 </div>
                 <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
@@ -2506,20 +2506,20 @@ const App: React.FC = () => {
                 <header className="sticky top-0 bg-white/75 dark:bg-slate-900/75 backdrop-blur-sm z-20 border-b border-slate-200 dark:border-slate-800">
                     <div className="container mx-auto px-6 py-3 flex justify-between items-center">
                         <div className="flex items-center gap-4">
-                             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
                              </button>
                             <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{pageTitles[activePage]}</h2>
                         </div>
                         <div className="flex items-center space-x-4">
-                            <button onClick={toggleTheme} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <button onClick={toggleTheme} className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
                                 {settings.theme === 'dark' ? 
                                     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg> :
                                     <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
                                 }
                             </button>
-                            <button className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 relative">
-                                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-800"></span>
+                            <button className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 relative">
+                                <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500 ring-2 ring-white dark:ring-slate-900"></span>
                                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
                             </button>
                             <div className="flex items-center gap-2">
